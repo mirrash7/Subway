@@ -46,7 +46,7 @@ window.addEventListener('load', async function() {
   const progressContainer = document.createElement('div');
   progressContainer.style.width = '300px';
   progressContainer.style.height = '20px';
-  progressContainer.style.border = '2px solid white';
+  progressContainer.style.border = '2px solid black'; // Changed to black for white background
   progressContainer.style.borderRadius = '10px';
   progressContainer.style.overflow = 'hidden';
   progressContainer.style.marginBottom = '20px';
@@ -58,21 +58,7 @@ window.addEventListener('load', async function() {
   progressBar.style.backgroundColor = '#4CAF50';
   progressBar.style.transition = 'width 0.3s';
   
-  const statusText = document.createElement('p');
-  statusText.id = 'status-text';
-  statusText.textContent = 'Loading pose detection model...';
-  statusText.style.fontSize = '16px';
-  statusText.style.marginBottom = '20px';
-  
-  const videoElement = document.createElement('video');
-  videoElement.id = 'webcam';
-  videoElement.style.width = '100%';
-  videoElement.style.height = '100%';
-  videoElement.style.transform = 'scaleX(1)';
-  videoElement.style.marginBottom = '0';
-  videoElement.style.border = '3px solid white';
-  videoElement.style.borderRadius = '5px';
-  
+  // Create camera container
   const canvasContainer = document.createElement('div');
   canvasContainer.style.position = 'fixed';
   canvasContainer.style.bottom = '20px';
@@ -84,6 +70,17 @@ window.addEventListener('load', async function() {
   canvasContainer.style.overflow = 'hidden';
   canvasContainer.style.boxShadow = '0 0 10px rgba(0,0,0,0.5)';
   
+  // Create video element
+  const videoElement = document.createElement('video');
+  videoElement.id = 'webcam';
+  videoElement.style.width = '100%';
+  videoElement.style.height = '100%';
+  videoElement.style.transform = 'scaleX(1)';
+  videoElement.style.marginBottom = '0';
+  videoElement.style.border = '3px solid white';
+  videoElement.style.borderRadius = '5px';
+  
+  // Create canvas element
   const canvasElement = document.createElement('canvas');
   canvasElement.id = 'pose-canvas';
   canvasElement.width = 400;
@@ -96,6 +93,20 @@ window.addEventListener('load', async function() {
   canvasElement.style.transform = 'scaleX(1)';
   canvasElement.style.zIndex = '2';
   
+  // Create status text that will only appear on the camera view
+  const statusText = document.createElement('div');
+  statusText.id = 'status-text';
+  statusText.textContent = 'Loading pose detection model...';
+  statusText.style.position = 'absolute';
+  statusText.style.bottom = '10px';
+  statusText.style.left = '10px';
+  statusText.style.color = 'white';
+  statusText.style.fontSize = '14px';
+  statusText.style.fontWeight = 'bold';
+  statusText.style.textShadow = '1px 1px 2px black';
+  statusText.style.zIndex = '3';
+  
+  // Create toggle button
   const toggleButton = document.createElement('button');
   toggleButton.id = 'toggle-overlay';
   toggleButton.textContent = 'Play with computer controls';
@@ -113,13 +124,25 @@ window.addEventListener('load', async function() {
   calibrationUI.appendChild(instructions);
   calibrationUI.appendChild(instructions2);
   calibrationUI.appendChild(progressContainer);
-  calibrationUI.appendChild(statusText);
   
+  // Add status text to canvas container instead of main UI
   canvasContainer.appendChild(videoElement);
   canvasContainer.appendChild(canvasElement);
+  canvasContainer.appendChild(statusText);
+  
   calibrationUI.appendChild(canvasContainer);
   
-  calibrationUI.appendChild(toggleButton);
+  // Update the button positioning to be consistent
+  // First, let's set the initial position of the button to be above the camera view
+  toggleButton.style.position = 'fixed';
+  toggleButton.style.bottom = '330px';
+  toggleButton.style.right = '20px';
+  toggleButton.style.zIndex = '100000';
+  toggleButton.style.marginTop = '0';
+  
+  // Remove the button from the calibrationUI and add it directly to the body
+  // so it's always in the same position
+  document.body.appendChild(toggleButton);
   
   overlay.appendChild(calibrationUI);
   document.body.appendChild(overlay);
@@ -135,15 +158,39 @@ window.addEventListener('load', async function() {
   // Toggle overlay when button is clicked
   toggleButton.addEventListener('click', function() {
     if (overlay.style.display === 'none') {
+      // Switching back to motion controls
       overlay.style.display = 'flex';
       toggleButton.textContent = 'Play with computer controls';
+      
+      // Reset calibration if needed
+      if (!calibrated) {
+        // Show calibration UI again
+        title.style.display = 'block';
+        instructions.style.display = 'block';
+        instructions2.style.display = 'block';
+        progressContainer.style.display = 'block';
+        overlay.style.backgroundColor = 'rgba(255, 255, 255, 0.9)';
+        
+        // Reset calibration variables
+        calibrationStartTime = 0;
+        calibrationProgress = 0;
+        progressBar.style.width = '0%';
+      }
+      
+      // Restart webcam if it was stopped
+      if (!videoElement.srcObject) {
+        startWebcam();
+      }
     } else {
+      // Switching to computer controls
       overlay.style.display = 'none';
-      toggleButton.textContent = 'Play with computer controls';
-      // Stop the webcam if it's running
+      toggleButton.textContent = 'Play with motion controls';
+      
+      // Stop the webcam
       if (videoElement.srcObject) {
         const tracks = videoElement.srcObject.getTracks();
         tracks.forEach(track => track.stop());
+        videoElement.srcObject = null;
       }
     }
   });
@@ -304,11 +351,6 @@ window.addEventListener('load', async function() {
         ctx.stroke();
       }
     }
-    
-    // Add a label for the current action
-    ctx.fillStyle = 'white';
-    ctx.font = 'bold 16px Arial';
-    ctx.fillText(statusText.textContent, 10, 30);
   }
   
   function checkCalibrationMoveNet(pose) {
@@ -342,7 +384,7 @@ window.addEventListener('load', async function() {
         instructions.textContent = 'Move your body to control the game';
         instructions2.textContent = '';
         progressContainer.style.display = 'none';
-        toggleButton.textContent = 'Turn Off Motion Control';
+        toggleButton.textContent = 'Play with computer controls';
         
         // Change overlay background to transparent
         overlay.style.backgroundColor = 'rgba(0, 0, 0, 0)';
@@ -353,12 +395,7 @@ window.addEventListener('load', async function() {
         instructions2.style.display = 'none';
         progressContainer.style.display = 'none';
         
-        // Move the button to the bottom right near the camera view
-        toggleButton.style.position = 'fixed';
-        toggleButton.style.bottom = '330px';
-        toggleButton.style.right = '20px';
-        toggleButton.style.zIndex = '100000';
-        toggleButton.style.marginTop = '0';
+        // Button position is already set and doesn't need to change
       }
     } else {
       calibrationStartTime = 0;
