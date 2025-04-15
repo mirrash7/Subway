@@ -13,14 +13,14 @@ window.addEventListener('load', async function() {
   overlay.style.left = '0';
   overlay.style.width = '100%';
   overlay.style.height = '100%';
-  overlay.style.backgroundColor = 'rgba(0, 0, 0, 0.7)'; // Dark background for better visibility
+  overlay.style.backgroundColor = 'rgba(255, 255, 255, 0.9)'; // White background for calibration
   overlay.style.zIndex = '99999';
   overlay.style.pointerEvents = 'none';
   overlay.style.display = 'flex';
   overlay.style.flexDirection = 'column';
   overlay.style.alignItems = 'center';
   overlay.style.justifyContent = 'center';
-  overlay.style.color = 'white';
+  overlay.style.color = 'black'; // Change text color to black for better visibility on white
   overlay.style.fontFamily = 'Arial, sans-serif';
   
   // Create calibration UI
@@ -66,32 +66,39 @@ window.addEventListener('load', async function() {
   
   const videoElement = document.createElement('video');
   videoElement.id = 'webcam';
-  videoElement.style.width = '320px';
-  videoElement.style.height = '240px';
-  videoElement.style.transform = 'scaleX(-1)'; // Mirror the video
-  videoElement.style.marginBottom = '20px';
+  videoElement.style.width = '100%';
+  videoElement.style.height = '100%';
+  videoElement.style.transform = 'scaleX(1)';
+  videoElement.style.marginBottom = '0';
   videoElement.style.border = '3px solid white';
   videoElement.style.borderRadius = '5px';
   
   const canvasContainer = document.createElement('div');
-  canvasContainer.style.position = 'relative';
-  canvasContainer.style.width = '320px';
-  canvasContainer.style.height = '240px';
-  canvasContainer.style.marginBottom = '20px';
+  canvasContainer.style.position = 'fixed';
+  canvasContainer.style.bottom = '20px';
+  canvasContainer.style.right = '20px';
+  canvasContainer.style.width = '400px';
+  canvasContainer.style.height = '300px';
+  canvasContainer.style.zIndex = '99999';
+  canvasContainer.style.borderRadius = '5px';
+  canvasContainer.style.overflow = 'hidden';
+  canvasContainer.style.boxShadow = '0 0 10px rgba(0,0,0,0.5)';
   
   const canvasElement = document.createElement('canvas');
   canvasElement.id = 'pose-canvas';
-  canvasElement.width = 320;
-  canvasElement.height = 240;
+  canvasElement.width = 400;
+  canvasElement.height = 300;
   canvasElement.style.position = 'absolute';
   canvasElement.style.top = '0';
   canvasElement.style.left = '0';
-  canvasElement.style.transform = 'scaleX(-1)'; // Mirror the canvas
+  canvasElement.style.width = '100%';
+  canvasElement.style.height = '100%';
+  canvasElement.style.transform = 'scaleX(1)';
   canvasElement.style.zIndex = '2';
   
   const toggleButton = document.createElement('button');
   toggleButton.id = 'toggle-overlay';
-  toggleButton.textContent = 'Skip Calibration';
+  toggleButton.textContent = 'Play with computer controls';
   toggleButton.style.padding = '10px 15px';
   toggleButton.style.backgroundColor = '#fff';
   toggleButton.style.border = '2px solid #ff8c00';
@@ -129,10 +136,10 @@ window.addEventListener('load', async function() {
   toggleButton.addEventListener('click', function() {
     if (overlay.style.display === 'none') {
       overlay.style.display = 'flex';
-      toggleButton.textContent = 'Skip Calibration';
+      toggleButton.textContent = 'Play with computer controls';
     } else {
       overlay.style.display = 'none';
-      toggleButton.textContent = 'Show Calibration';
+      toggleButton.textContent = 'Play with computer controls';
       // Stop the webcam if it's running
       if (videoElement.srcObject) {
         const tracks = videoElement.srcObject.getTracks();
@@ -186,14 +193,8 @@ window.addEventListener('load', async function() {
     if (!videoElement.srcObject || !model) return;
     
     const ctx = canvasElement.getContext('2d');
-    ctx.clearRect(0, 0, canvasElement.width, canvasElement.height);
     
     try {
-      // Draw video frame on canvas for debugging
-      ctx.globalAlpha = 0.5;
-      ctx.drawImage(videoElement, 0, 0, canvasElement.width, canvasElement.height);
-      ctx.globalAlpha = 1.0;
-      
       // Create a temporary canvas to get the exact size we need
       const tempCanvas = document.createElement('canvas');
       tempCanvas.width = 192;
@@ -213,15 +214,7 @@ window.addEventListener('load', async function() {
       input.dispose();
       output.dispose();
       
-      // Debug the output format
-      console.log("Model output shape:", posesData.length, posesData[0].length);
-      
       // Extract keypoints from the model output
-      // MoveNet returns a 1x1x17x3 tensor where:
-      // - First dimension is batch size (1)
-      // - Second dimension is number of people detected (1)
-      // - Third dimension is number of keypoints (17)
-      // - Fourth dimension is [y, x, confidence] for each keypoint
       if (posesData && posesData.length > 0 && posesData[0].length > 0) {
         const keypoints = posesData[0][0]; // Get the first person's keypoints
         
@@ -252,35 +245,41 @@ window.addEventListener('load', async function() {
   function drawKeypoints(keypoints, ctx) {
     if (!keypoints || keypoints.length === 0) return;
     
-    ctx.fillStyle = '#00FF00';
-    ctx.strokeStyle = '#00FF00';
-    ctx.lineWidth = 2;
+    // Clear the canvas first
+    ctx.clearRect(0, 0, canvasElement.width, canvasElement.height);
     
-    // Draw each keypoint
+    // Set background to semi-transparent black like in pose-detection.js
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
+    ctx.fillRect(0, 0, canvasElement.width, canvasElement.height);
+    
+    // Draw keypoints with yellow circles like in pose-detection.js
     for (let i = 0; i < keypoints.length; i++) {
       const keypoint = keypoints[i];
       if (!keypoint || keypoint.length < 3) continue;
       
       const score = keypoint[2];
-      if (score > 0.3) {
+      if (score > 0.5) { // Use same threshold as pose-detection.js
         const y = keypoint[0] * canvasElement.height;
         const x = keypoint[1] * canvasElement.width;
         
         ctx.beginPath();
-        ctx.arc(x, y, 5, 0, 2 * Math.PI);
+        ctx.arc(x, y, 6, 0, 2 * Math.PI); // Same size as pose-detection.js
+        ctx.fillStyle = 'yellow'; // Same color as pose-detection.js
         ctx.fill();
       }
     }
     
-    // Draw skeleton connections
+    // Draw skeleton with green lines like in pose-detection.js
     const connections = [
-      [0, 1], [0, 2], [1, 3], [2, 4], // Head to shoulders to elbows
-      [3, 5], [4, 6], // Elbows to wrists
-      [5, 7], [6, 8], // Wrists to hands
-      [0, 9], [0, 10], // Shoulders to hips
-      [9, 11], [10, 12], // Hips to knees
-      [11, 13], [12, 14], // Knees to ankles
-      [13, 15], [14, 16] // Ankles to feet
+      [0, 1], [0, 2], // Nose to eyes
+      [1, 3], [2, 4], // Eyes to ears
+      [5, 6], // Connect shoulders
+      [5, 7], [7, 9], // Left shoulder to elbow to wrist
+      [6, 8], [8, 10], // Right shoulder to elbow to wrist
+      [5, 11], [6, 12], // Shoulders to hips
+      [11, 12], // Connect hips
+      [11, 13], [13, 15], // Left hip to knee to ankle
+      [12, 14], [14, 16] // Right hip to knee to ankle
     ];
     
     for (const [p1, p2] of connections) {
@@ -291,7 +290,7 @@ window.addEventListener('load', async function() {
       
       if (!keypoint1 || !keypoint2 || keypoint1.length < 3 || keypoint2.length < 3) continue;
       
-      if (keypoint1[2] > 0.3 && keypoint2[2] > 0.3) {
+      if (keypoint1[2] > 0.5 && keypoint2[2] > 0.5) {
         const y1 = keypoint1[0] * canvasElement.height;
         const x1 = keypoint1[1] * canvasElement.width;
         const y2 = keypoint2[0] * canvasElement.height;
@@ -300,9 +299,16 @@ window.addEventListener('load', async function() {
         ctx.beginPath();
         ctx.moveTo(x1, y1);
         ctx.lineTo(x2, y2);
+        ctx.lineWidth = 3; // Same thickness as pose-detection.js
+        ctx.strokeStyle = 'green'; // Same color as pose-detection.js
         ctx.stroke();
       }
     }
+    
+    // Add a label for the current action
+    ctx.fillStyle = 'white';
+    ctx.font = 'bold 16px Arial';
+    ctx.fillText(statusText.textContent, 10, 30);
   }
   
   function checkCalibrationMoveNet(pose) {
@@ -337,6 +343,22 @@ window.addEventListener('load', async function() {
         instructions2.textContent = '';
         progressContainer.style.display = 'none';
         toggleButton.textContent = 'Turn Off Motion Control';
+        
+        // Change overlay background to transparent
+        overlay.style.backgroundColor = 'rgba(0, 0, 0, 0)';
+        
+        // Hide calibration UI elements except for the canvas container and button
+        title.style.display = 'none';
+        instructions.style.display = 'none';
+        instructions2.style.display = 'none';
+        progressContainer.style.display = 'none';
+        
+        // Move the button to the bottom right near the camera view
+        toggleButton.style.position = 'fixed';
+        toggleButton.style.bottom = '330px';
+        toggleButton.style.right = '20px';
+        toggleButton.style.zIndex = '100000';
+        toggleButton.style.marginTop = '0';
       }
     } else {
       calibrationStartTime = 0;
