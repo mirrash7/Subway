@@ -165,6 +165,41 @@ window.addEventListener('load', async function() {
   toggleButton.style.fontWeight = 'bold';
   toggleButton.style.marginTop = '20px';
   
+  // Create section labels as HTML elements instead of drawing on canvas
+  const leftLabel = document.createElement('div');
+  leftLabel.textContent = 'Right';
+  leftLabel.style.position = 'absolute';
+  leftLabel.style.top = '5px';
+  leftLabel.style.right = '30px'; // Position on right side (for left action)
+  leftLabel.style.color = 'white';
+  leftLabel.style.fontSize = '12px';
+  leftLabel.style.fontWeight = 'bold';
+  leftLabel.style.textShadow = '1px 1px 2px black';
+  leftLabel.style.zIndex = '4';
+
+  const centerLabel = document.createElement('div');
+  centerLabel.textContent = 'Center';
+  centerLabel.style.position = 'absolute';
+  centerLabel.style.top = '5px';
+  centerLabel.style.left = '50%';
+  centerLabel.style.transform = 'translateX(-50%)'; // Center the label
+  centerLabel.style.color = 'white';
+  centerLabel.style.fontSize = '12px';
+  centerLabel.style.fontWeight = 'bold';
+  centerLabel.style.textShadow = '1px 1px 2px black';
+  centerLabel.style.zIndex = '4';
+
+  const rightLabel = document.createElement('div');
+  rightLabel.textContent = 'Left';
+  rightLabel.style.position = 'absolute';
+  rightLabel.style.top = '5px';
+  rightLabel.style.left = '30px'; // Position on left side (for right action)
+  rightLabel.style.color = 'white';
+  rightLabel.style.fontSize = '12px';
+  rightLabel.style.fontWeight = 'bold';
+  rightLabel.style.textShadow = '1px 1px 2px black';
+  rightLabel.style.zIndex = '4';
+  
   // Assemble the UI
   instructionsContainer.appendChild(instructions);
   instructionsContainer.appendChild(instructions2);
@@ -178,6 +213,11 @@ window.addEventListener('load', async function() {
   canvasContainer.appendChild(videoElement);
   canvasContainer.appendChild(canvasElement);
   canvasContainer.appendChild(statusText);
+  
+  // Add the labels to the canvas container
+  canvasContainer.appendChild(leftLabel);
+  canvasContainer.appendChild(centerLabel);
+  canvasContainer.appendChild(rightLabel);
   
   calibrationUI.appendChild(canvasContainer);
   
@@ -345,6 +385,23 @@ window.addEventListener('load', async function() {
     // Set background to semi-transparent black like in pose-detection.js
     ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
     ctx.fillRect(0, 0, canvasElement.width, canvasElement.height);
+    
+    // Draw vertical lines to divide the view into three sections
+    const sectionWidth = canvasElement.width / 3;
+    
+    // Draw first dividing line (1/3 of the way)
+    ctx.beginPath();
+    ctx.moveTo(sectionWidth, 0);
+    ctx.lineTo(sectionWidth, canvasElement.height);
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    
+    // Draw second dividing line (2/3 of the way)
+    ctx.beginPath();
+    ctx.moveTo(sectionWidth * 2, 0);
+    ctx.lineTo(sectionWidth * 2, canvasElement.height);
+    ctx.stroke();
     
     // Draw keypoints with yellow circles like in pose-detection.js
     for (let i = 0; i < keypoints.length; i++) {
