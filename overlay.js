@@ -13,7 +13,7 @@ window.addEventListener('load', async function() {
   overlay.style.left = '0';
   overlay.style.width = '100%';
   overlay.style.height = '100%';
-  overlay.style.backgroundColor = 'rgba(255, 255, 255, 0.9)'; // White background for calibration
+  overlay.style.backgroundColor = 'rgba(255, 255, 255, 0.7)'; // White background for calibration
   overlay.style.zIndex = '99999';
   overlay.style.pointerEvents = 'none';
   overlay.style.display = 'flex';
@@ -29,34 +29,81 @@ window.addEventListener('load', async function() {
   calibrationUI.style.textAlign = 'center';
   calibrationUI.style.pointerEvents = 'auto';
   
+  // Move the title into the instructions container
   const title = document.createElement('h1');
   title.textContent = 'Motion Control Calibration';
-  title.style.marginBottom = '20px';
+  title.style.marginBottom = '30px';
+  title.style.fontSize = '32px';
+  title.style.fontWeight = 'bold';
+  title.style.color = '#333';
+  title.style.textShadow = '1px 1px 2px rgba(0,0,0,0.1)';
+  title.style.textAlign = 'center'; // Center the title in the container
+  
+  // Create a container for the instructions
+  const instructionsContainer = document.createElement('div');
+  instructionsContainer.style.backgroundColor = 'rgba(255, 255, 255, 1)';
+  instructionsContainer.style.padding = '25px 40px';
+  instructionsContainer.style.borderRadius = '10px';
+  instructionsContainer.style.boxShadow = '0 4px 10px rgba(0,0,0,0.1)';
+  instructionsContainer.style.marginBottom = '30px';
+  instructionsContainer.style.maxWidth = '500px';
+  instructionsContainer.style.width = '100%';
+  
+  // Add the title to the instructions container first
+  instructionsContainer.appendChild(title);
   
   const instructions = document.createElement('p');
   instructions.textContent = '1. Stand in front of camera';
-  instructions.style.fontSize = '18px';
-  instructions.style.marginBottom = '10px';
+  instructions.style.fontSize = '22px';
+  instructions.style.fontWeight = 'bold';
+  instructions.style.marginBottom = '15px';
+  instructions.style.color = '#333';
   
   const instructions2 = document.createElement('p');
   instructions2.textContent = '2. Raise hand above head for 3 seconds';
-  instructions2.style.fontSize = '18px';
-  instructions2.style.marginBottom = '20px';
+  instructions2.style.fontSize = '22px';
+  instructions2.style.fontWeight = 'bold';
+  instructions2.style.marginBottom = '25px';
+  instructions2.style.color = '#333';
   
+  // Improve the progress container styling
   const progressContainer = document.createElement('div');
-  progressContainer.style.width = '300px';
-  progressContainer.style.height = '20px';
-  progressContainer.style.border = '2px solid black'; // Changed to black for white background
-  progressContainer.style.borderRadius = '10px';
+  progressContainer.style.width = '100%';
+  progressContainer.style.height = '25px';
+  progressContainer.style.border = '2px solid #333';
+  progressContainer.style.borderRadius = '15px';
   progressContainer.style.overflow = 'hidden';
-  progressContainer.style.marginBottom = '20px';
+  progressContainer.style.marginBottom = '10px';
+  progressContainer.style.boxShadow = 'inset 0 1px 3px rgba(0,0,0,0.2)';
   
+  // Add a label for the progress
+  const progressLabel = document.createElement('div');
+  progressLabel.textContent = 'Calibration Progress';
+  progressLabel.style.fontSize = '16px';
+  progressLabel.style.fontWeight = 'bold';
+  progressLabel.style.marginBottom = '10px';
+  progressLabel.style.color = '#555';
+  
+  // Improve the progress bar styling
   const progressBar = document.createElement('div');
   progressBar.id = 'calibration-progress';
   progressBar.style.width = '0%';
   progressBar.style.height = '100%';
   progressBar.style.backgroundColor = '#4CAF50';
   progressBar.style.transition = 'width 0.3s';
+  progressBar.style.backgroundImage = 'linear-gradient(45deg, rgba(255,255,255,0.2) 25%, transparent 25%, transparent 50%, rgba(255,255,255,0.2) 50%, rgba(255,255,255,0.2) 75%, transparent 75%, transparent)';
+  progressBar.style.backgroundSize = '35px 35px';
+  progressBar.style.animation = 'progress-bar-stripes 2s linear infinite';
+  
+  // Add a style for the animation
+  const styleElement = document.createElement('style');
+  styleElement.textContent = `
+    @keyframes progress-bar-stripes {
+      from { background-position: 35px 0; }
+      to { background-position: 0 0; }
+    }
+  `;
+  document.head.appendChild(styleElement);
   
   // Create camera container
   const canvasContainer = document.createElement('div');
@@ -75,7 +122,7 @@ window.addEventListener('load', async function() {
   videoElement.id = 'webcam';
   videoElement.style.width = '100%';
   videoElement.style.height = '100%';
-  videoElement.style.transform = 'scaleX(1)';
+  videoElement.style.transform = 'scaleX(-1)';
   videoElement.style.marginBottom = '0';
   videoElement.style.border = '3px solid white';
   videoElement.style.borderRadius = '5px';
@@ -90,7 +137,7 @@ window.addEventListener('load', async function() {
   canvasElement.style.left = '0';
   canvasElement.style.width = '100%';
   canvasElement.style.height = '100%';
-  canvasElement.style.transform = 'scaleX(1)';
+  canvasElement.style.transform = 'scaleX(-1)';
   canvasElement.style.zIndex = '2';
   
   // Create status text that will only appear on the camera view
@@ -119,11 +166,13 @@ window.addEventListener('load', async function() {
   toggleButton.style.marginTop = '20px';
   
   // Assemble the UI
+  instructionsContainer.appendChild(instructions);
+  instructionsContainer.appendChild(instructions2);
+  instructionsContainer.appendChild(progressLabel);
   progressContainer.appendChild(progressBar);
-  calibrationUI.appendChild(title);
-  calibrationUI.appendChild(instructions);
-  calibrationUI.appendChild(instructions2);
-  calibrationUI.appendChild(progressContainer);
+  instructionsContainer.appendChild(progressContainer);
+  
+  calibrationUI.appendChild(instructionsContainer);
   
   // Add status text to canvas container instead of main UI
   canvasContainer.appendChild(videoElement);
@@ -165,9 +214,7 @@ window.addEventListener('load', async function() {
       // Reset calibration if needed
       if (!calibrated) {
         // Show calibration UI again
-        title.style.display = 'block';
-        instructions.style.display = 'block';
-        instructions2.style.display = 'block';
+        instructionsContainer.style.display = 'block';
         progressContainer.style.display = 'block';
         overlay.style.backgroundColor = 'rgba(255, 255, 255, 0.9)';
         
@@ -381,8 +428,7 @@ window.addEventListener('load', async function() {
         
         // Change UI to show game is ready
         title.textContent = 'Motion Control Active';
-        instructions.textContent = 'Move your body to control the game';
-        instructions2.textContent = '';
+        instructionsContainer.style.display = 'none';
         progressContainer.style.display = 'none';
         toggleButton.textContent = 'Play with computer controls';
         
@@ -390,9 +436,7 @@ window.addEventListener('load', async function() {
         overlay.style.backgroundColor = 'rgba(0, 0, 0, 0)';
         
         // Hide calibration UI elements except for the canvas container and button
-        title.style.display = 'none';
-        instructions.style.display = 'none';
-        instructions2.style.display = 'none';
+        instructionsContainer.style.display = 'none';
         progressContainer.style.display = 'none';
         
         // Button position is already set and doesn't need to change
