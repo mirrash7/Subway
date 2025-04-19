@@ -200,6 +200,46 @@ window.addEventListener('load', async function() {
   rightLabel.style.textShadow = '1px 1px 2px black';
   rightLabel.style.zIndex = '4';
   
+  // Create threshold labels as HTML elements
+  const standingLabel = document.createElement('div');
+  standingLabel.textContent = 'Standing';
+  standingLabel.style.position = 'absolute';
+  standingLabel.style.right = '10px';
+  standingLabel.style.color = 'white';
+  standingLabel.style.fontSize = '14px';
+  standingLabel.style.fontWeight = 'bold';
+  standingLabel.style.backgroundColor = 'rgba(0, 0, 0, 0.7)';
+  standingLabel.style.padding = '2px 6px';
+  standingLabel.style.borderRadius = '3px';
+  standingLabel.style.display = 'none'; // Hide initially
+  standingLabel.style.zIndex = '5';
+
+  const jumpLabel = document.createElement('div');
+  jumpLabel.textContent = 'Jump';
+  jumpLabel.style.position = 'absolute';
+  jumpLabel.style.right = '10px';
+  jumpLabel.style.color = 'white';
+  jumpLabel.style.fontSize = '14px';
+  jumpLabel.style.fontWeight = 'bold';
+  jumpLabel.style.backgroundColor = 'rgba(0, 0, 0, 0.7)';
+  jumpLabel.style.padding = '2px 6px';
+  jumpLabel.style.borderRadius = '3px';
+  jumpLabel.style.display = 'none'; // Hide initially
+  jumpLabel.style.zIndex = '5';
+
+  const duckLabel = document.createElement('div');
+  duckLabel.textContent = 'Duck';
+  duckLabel.style.position = 'absolute';
+  duckLabel.style.right = '10px';
+  duckLabel.style.color = 'white';
+  duckLabel.style.fontSize = '14px';
+  duckLabel.style.fontWeight = 'bold';
+  duckLabel.style.backgroundColor = 'rgba(0, 0, 0, 0.7)';
+  duckLabel.style.padding = '2px 6px';
+  duckLabel.style.borderRadius = '3px';
+  duckLabel.style.display = 'none'; // Hide initially
+  duckLabel.style.zIndex = '5';
+  
   // Assemble the UI
   instructionsContainer.appendChild(instructions);
   instructionsContainer.appendChild(instructions2);
@@ -218,6 +258,9 @@ window.addEventListener('load', async function() {
   canvasContainer.appendChild(leftLabel);
   canvasContainer.appendChild(centerLabel);
   canvasContainer.appendChild(rightLabel);
+  canvasContainer.appendChild(standingLabel);
+  canvasContainer.appendChild(jumpLabel);
+  canvasContainer.appendChild(duckLabel);
   
   calibrationUI.appendChild(canvasContainer);
   
@@ -241,8 +284,24 @@ window.addEventListener('load', async function() {
   let calibrated = false;
   let calibrationProgress = 0;
   let calibrationStartTime = 0;
-  let handRaisedThreshold = 0;
   let currentPose = null;
+  let lastShoulderPosition = 'middle'; // Track the last position of shoulders
+  let currentPositionZone = 'middle'; // Track the current position zone
+  
+  // Initialize calibration variables
+  let calibrationShoulders = [];
+  let calibrationHips = [];
+  let calibrationBodyHeights = [];
+  let shoulderBaseline = null;
+  let hipBaseline = null;
+  let bodyHeight = null;
+  let jumpThreshold = null;
+  let duckThreshold = null;
+  
+  // Add debounce variables
+  let lastCommandTime = 0;
+  let lastCommand = null;
+  const commandCooldown = 300; // milliseconds between commands
   
   // Toggle overlay when button is clicked
   toggleButton.addEventListener('click', function() {
@@ -271,7 +330,7 @@ window.addEventListener('load', async function() {
     } else {
       // Switching to computer controls
       overlay.style.display = 'none';
-      toggleButton.textContent = 'Play with motion controls';
+      toggleButton.textContent = 'Play with computer controls';
       
       // Stop the webcam
       if (videoElement.srcObject) {
@@ -455,33 +514,115 @@ window.addEventListener('load', async function() {
         ctx.stroke();
       }
     }
+    
+    // Draw baselines if calibration is complete
+    if (calibrated && shoulderBaseline) {
+      // Draw shoulder baseline
+      ctx.beginPath();
+      ctx.moveTo(0, shoulderBaseline * canvasElement.height);
+      ctx.lineTo(canvasElement.width, shoulderBaseline * canvasElement.height);
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = 'green';
+      ctx.stroke();
+      
+      // Draw jump threshold line
+      ctx.beginPath();
+      ctx.setLineDash([8, 5]);
+      ctx.moveTo(0, (shoulderBaseline - jumpThreshold) * canvasElement.height);
+      ctx.lineTo(canvasElement.width, (shoulderBaseline - jumpThreshold) * canvasElement.height);
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = 'red';
+      ctx.stroke();
+      
+      // Draw duck threshold line
+      ctx.beginPath();
+      ctx.moveTo(0, (shoulderBaseline - duckThreshold) * canvasElement.height);
+      ctx.lineTo(canvasElement.width, (shoulderBaseline - duckThreshold) * canvasElement.height);
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = 'orange';
+      ctx.stroke();
+      
+      ctx.setLineDash([]);
+      
+      // Position the HTML labels
+      standingLabel.style.display = 'block';
+      standingLabel.style.top = (shoulderBaseline * canvasElement.height - 25) + 'px';
+      
+      jumpLabel.style.display = 'block';
+      jumpLabel.style.top = ((shoulderBaseline - jumpThreshold) * canvasElement.height - 25) + 'px';
+      
+      duckLabel.style.display = 'block';
+      duckLabel.style.top = ((shoulderBaseline - duckThreshold) * canvasElement.height - 25) + 'px';
+    } else {
+      // Hide the labels if not calibrated
+      standingLabel.style.display = 'none';
+      jumpLabel.style.display = 'none';
+      duckLabel.style.display = 'none';
+    }
   }
   
   function checkCalibrationMoveNet(pose) {
-    // Get nose and wrist keypoints
+    // Get keypoints
     const nose = pose[0];
+    const leftShoulder = pose[5];
+    const rightShoulder = pose[6];
     const leftWrist = pose[9];
     const rightWrist = pose[10];
+    const leftHip = pose[11];
+    const rightHip = pose[12];
     
-    // Check if either wrist is above the nose (y-coordinate)
-    const handRaised = (leftWrist[2] > 0.5 && leftWrist[0] < nose[0]) || 
-                       (rightWrist[2] > 0.5 && rightWrist[0] < nose[0]);
+    // Only proceed if we have shoulders detected with good confidence
+    if (leftShoulder[2] < 0.5 || rightShoulder[2] < 0.5) return;
+    
+    // Calculate average shoulder Y position
+    const avgShoulderY = (leftShoulder[0] + rightShoulder[0]) / 2;
+    
+    // Check if either wrist is above shoulders
+    const handRaised = (leftWrist[2] > 0.5 && leftWrist[0] < avgShoulderY) || 
+                       (rightWrist[2] > 0.5 && rightWrist[0] < avgShoulderY);
     
     if (handRaised) {
+      // If this is the first frame with hand raised, start the timer
       if (calibrationStartTime === 0) {
         calibrationStartTime = Date.now();
+        
+        // Initialize calibration data arrays
+        calibrationShoulders = [];
+        calibrationHips = [];
+        calibrationBodyHeights = [];
       }
       
+      // Collect calibration data
+      calibrationShoulders.push(avgShoulderY);
+      
+      // Get hip positions if available
+      if (leftHip[2] > 0.3 && rightHip[2] > 0.3) {
+        const avgHipY = (leftHip[0] + rightHip[0]) / 2;
+        calibrationHips.push(avgHipY);
+        
+        // Calculate body height
+        const currentBodyHeight = Math.abs(avgShoulderY - avgHipY);
+        calibrationBodyHeights.push(currentBodyHeight);
+      }
+      
+      // Calculate elapsed time and update progress
       const elapsedTime = Date.now() - calibrationStartTime;
       calibrationProgress = Math.min(100, (elapsedTime / 3000) * 100);
       progressBar.style.width = `${calibrationProgress}%`;
       
+      // Check if calibration is complete
       if (calibrationProgress >= 100) {
         calibrated = true;
         statusText.textContent = 'Calibration complete! You can now control the game with your movements.';
         
-        // Store the hand raised position for threshold
-        handRaisedThreshold = Math.min(leftWrist[0], rightWrist[0]);
+        // Calculate baselines from collected data
+        shoulderBaseline = average(calibrationShoulders);
+        hipBaseline = average(calibrationHips);
+        bodyHeight = average(calibrationBodyHeights);
+        
+        // Calculate thresholds - only one jump threshold at 20%
+        jumpThreshold = bodyHeight * 0.20;   // 20% of body height
+        duckThreshold = bodyHeight * -0.50;  // 50% of body height below
         
         // Change UI to show game is ready
         title.textContent = 'Motion Control Active';
@@ -496,76 +637,357 @@ window.addEventListener('load', async function() {
         instructionsContainer.style.display = 'none';
         progressContainer.style.display = 'none';
         
-        // Button position is already set and doesn't need to change
+        // Try to focus the game element
+        focusGameElement();
+        
+        console.log("Calibration complete!");
+        console.log("Shoulder baseline:", shoulderBaseline);
+        console.log("Body height:", bodyHeight);
+        console.log("Jump threshold:", jumpThreshold);
+        console.log("Duck threshold:", duckThreshold);
       }
     } else {
+      // Reset if hand is lowered
       calibrationStartTime = 0;
       calibrationProgress = 0;
       progressBar.style.width = '0%';
+      calibrationShoulders = [];
+      calibrationHips = [];
+      calibrationBodyHeights = [];
     }
+  }
+  
+  function average(arr) {
+    if (!arr || arr.length === 0) return 0;
+    return arr.reduce((a, b) => a + b, 0) / arr.length;
   }
   
   function controlGameMoveNet(pose) {
     // Get relevant keypoints
     const nose = pose[0];
+    const leftShoulder = pose[5];
+    const rightShoulder = pose[6];
     const leftWrist = pose[9];
     const rightWrist = pose[10];
-    const leftHip = pose[11];
-    const rightHip = pose[12];
     
-    // Only proceed if nose is detected with good confidence
-    if (nose[2] > 0.5) {
-      // Jump action - hand raised above threshold
-      if ((leftWrist[2] > 0.5 && leftWrist[0] < handRaisedThreshold) || 
-          (rightWrist[2] > 0.5 && rightWrist[0] < handRaisedThreshold)) {
-        // Trigger jump
-        simulateKeyPress(' '); // Space key for jump
-        statusText.textContent = 'Action: Jump';
-      }
+    // Only proceed if shoulders are detected with good confidence
+    if (leftShoulder[2] > 0.5 && rightShoulder[2] > 0.5) {
+      const currentTime = Date.now();
       
-      // Duck action - hands below waist
-      if (leftWrist[2] > 0.5 && rightWrist[2] > 0.5 && 
-          leftWrist[0] > leftHip[0] && rightWrist[0] > rightHip[0]) {
-        // Trigger duck
-        simulateKeyPress('ArrowDown');
-        statusText.textContent = 'Action: Duck';
-      }
+      // Calculate midpoint of shoulders for left/right movement
+      const shoulderMidpointX = (leftShoulder[1] + rightShoulder[1]) / 2;
       
-      // Left/Right movement based on body position
-      if (nose[1] < 0.4) {
-        simulateKeyPress('ArrowLeft');
-        statusText.textContent = 'Action: Move Left';
-      } else if (nose[1] > 0.6) {
-        simulateKeyPress('ArrowRight');
-        statusText.textContent = 'Action: Move Right';
+      // Define the three sections of the screen
+      const leftThreshold = 1/3;
+      const rightThreshold = 2/3;
+      
+      // Determine which zone the player is currently in
+      let newPositionZone;
+      if (shoulderMidpointX < leftThreshold) {
+        newPositionZone = 'left';
+      } else if (shoulderMidpointX > rightThreshold) {
+        newPositionZone = 'right';
       } else {
-        statusText.textContent = 'Action: Standing';
+        newPositionZone = 'middle';
+      }
+      
+      // Only send input when crossing boundaries between zones
+      if (newPositionZone !== currentPositionZone) {
+        console.log(`Zone change: ${currentPositionZone} -> ${newPositionZone}`);
+        
+        // Handle zone transitions
+        if (newPositionZone === 'left') {
+          // Moving from middle or right to left
+          simulateKeyPress('ArrowLeft');
+          statusText.textContent = 'Action: Move Left';
+          lastCommand = 'left';
+          lastCommandTime = currentTime;
+        } else if (newPositionZone === 'right') {
+          // Moving from middle or left to right
+          simulateKeyPress('ArrowRight');
+          statusText.textContent = 'Action: Move Right';
+          lastCommand = 'right';
+          lastCommandTime = currentTime;
+        } else if (newPositionZone === 'middle') {
+          // Moving from left to middle - send right input
+          if (currentPositionZone === 'left') {
+            simulateKeyPress('ArrowRight');
+            statusText.textContent = 'Action: Move Right (from left)';
+            lastCommand = 'right_from_left';
+            lastCommandTime = currentTime;
+          } 
+          // Moving from right to middle - send left input
+          else if (currentPositionZone === 'right') {
+            simulateKeyPress('ArrowLeft');
+            statusText.textContent = 'Action: Move Left (from right)';
+            lastCommand = 'left_from_right';
+            lastCommandTime = currentTime;
+          }
+        }
+        
+        // Update the current position zone
+        currentPositionZone = newPositionZone;
+      } else {
+        // If we're in the same zone, update the status text but don't send inputs
+        if (currentPositionZone === 'left') {
+          statusText.textContent = 'Position: Left';
+        } else if (currentPositionZone === 'right') {
+          statusText.textContent = 'Position: Right';
+        } else {
+          statusText.textContent = 'Position: Middle';
+        }
+      }
+      
+      // Jump action - hand raised above threshold
+      if ((leftWrist[2] > 0.5 && leftWrist[0] < shoulderBaseline - jumpThreshold) || 
+          (rightWrist[2] > 0.5 && rightWrist[0] < shoulderBaseline - jumpThreshold)) {
+        if (lastCommand !== 'jump' || currentTime - lastCommandTime > commandCooldown) {
+          simulateKeyPress(' '); // Space key for jump
+          statusText.textContent = 'Action: Jump';
+          lastCommand = 'jump';
+          lastCommandTime = currentTime;
+        }
+      }
+      
+      // Duck action - hands below duck threshold
+      if (leftWrist[2] > 0.5 && rightWrist[2] > 0.5 && 
+          leftWrist[0] > shoulderBaseline - duckThreshold && 
+          rightWrist[0] > shoulderBaseline - duckThreshold) {
+        if (lastCommand !== 'duck' || currentTime - lastCommandTime > commandCooldown) {
+          simulateKeyPress('ArrowDown');
+          statusText.textContent = 'Action: Duck';
+          lastCommand = 'duck';
+          lastCommandTime = currentTime;
+        }
       }
     }
   }
   
   function simulateKeyPress(key) {
+    // Try multiple approaches to ensure the key press is recognized
+    
+    // 1. Try to find the Unity canvas/container
+    const unityCanvas = document.querySelector('canvas');
+    const unityContainer = document.getElementById('unity-container') || 
+                           document.querySelector('[id*="unity"]') ||
+                           document.querySelector('.webgl-content');
+    
+    // 2. Create standard keyboard events
     const keyDownEvent = new KeyboardEvent('keydown', {
       key: key,
-      code: key === ' ' ? 'Space' : key,
-      keyCode: key === ' ' ? 32 : key.charCodeAt(0),
-      which: key === ' ' ? 32 : key.charCodeAt(0),
-      bubbles: true
+      code: key === ' ' ? 'Space' : (key.startsWith('Arrow') ? key : `Key${key.toUpperCase()}`),
+      keyCode: key === ' ' ? 32 : (key === 'ArrowLeft' ? 37 : key === 'ArrowUp' ? 38 : key === 'ArrowRight' ? 39 : key === 'ArrowDown' ? 40 : key.charCodeAt(0)),
+      which: key === ' ' ? 32 : (key === 'ArrowLeft' ? 37 : key === 'ArrowUp' ? 38 : key === 'ArrowRight' ? 39 : key === 'ArrowDown' ? 40 : key.charCodeAt(0)),
+      bubbles: true,
+      cancelable: true,
+      view: window
     });
     
+    // 3. Try to access the Unity instance directly
+    if (window.unityInstance) {
+      console.log('Found Unity instance, sending input directly');
+      try {
+        // Try to send input directly to Unity
+        if (key === ' ') {
+          window.unityInstance.SendMessage('GameController', 'Jump');
+        } else if (key === 'ArrowLeft') {
+          window.unityInstance.SendMessage('GameController', 'MoveLeft');
+        } else if (key === 'ArrowRight') {
+          window.unityInstance.SendMessage('GameController', 'MoveRight');
+        } else if (key === 'ArrowDown') {
+          window.unityInstance.SendMessage('GameController', 'Duck');
+        }
+      } catch (e) {
+        console.log('Error sending direct message to Unity:', e);
+      }
+    }
+    
+    // 4. Try to use the Poki bridge if available
+    if (window.PokiSDK) {
+      console.log('Found PokiSDK, trying to use it for input');
+      try {
+        if (window.pokiBridge) {
+          if (key === ' ') {
+            window.unityGame.SendMessage(window.pokiBridge, 'Jump');
+          } else if (key === 'ArrowLeft') {
+            window.unityGame.SendMessage(window.pokiBridge, 'MoveLeft');
+          } else if (key === 'ArrowRight') {
+            window.unityGame.SendMessage(window.pokiBridge, 'MoveRight');
+          } else if (key === 'ArrowDown') {
+            window.unityGame.SendMessage(window.pokiBridge, 'Duck');
+          }
+        }
+      } catch (e) {
+        console.log('Error using Poki bridge:', e);
+      }
+    }
+    
+    // 5. Dispatch events to all possible targets
     document.dispatchEvent(keyDownEvent);
+    window.dispatchEvent(keyDownEvent);
+    
+    if (unityCanvas) {
+      unityCanvas.dispatchEvent(keyDownEvent);
+      // Also try to focus the canvas first
+      unityCanvas.focus();
+    }
+    
+    if (unityContainer) {
+      unityContainer.dispatchEvent(keyDownEvent);
+    }
+    
+    // 6. Try to use document.activeElement
+    if (document.activeElement) {
+      document.activeElement.dispatchEvent(keyDownEvent);
+    }
+    
+    // 7. Create and dispatch a more basic event as fallback
+    const fallbackEvent = {
+      keyCode: key === ' ' ? 32 : (key === 'ArrowLeft' ? 37 : key === 'ArrowUp' ? 38 : key === 'ArrowRight' ? 39 : key === 'ArrowDown' ? 40 : key.charCodeAt(0)),
+      preventDefault: function() {}
+    };
+    
+    // Try to find any game-related event handlers
+    if (window.handleKeyDown) {
+      window.handleKeyDown(fallbackEvent);
+    }
     
     // Release key after a short delay
     setTimeout(() => {
       const keyUpEvent = new KeyboardEvent('keyup', {
         key: key,
-        code: key === ' ' ? 'Space' : key,
-        keyCode: key === ' ' ? 32 : key.charCodeAt(0),
-        which: key === ' ' ? 32 : key.charCodeAt(0),
-        bubbles: true
+        code: key === ' ' ? 'Space' : (key.startsWith('Arrow') ? key : `Key${key.toUpperCase()}`),
+        keyCode: key === ' ' ? 32 : (key === 'ArrowLeft' ? 37 : key === 'ArrowUp' ? 38 : key === 'ArrowRight' ? 39 : key === 'ArrowDown' ? 40 : key.charCodeAt(0)),
+        which: key === ' ' ? 32 : (key === 'ArrowLeft' ? 37 : key === 'ArrowUp' ? 38 : key === 'ArrowRight' ? 39 : key === 'ArrowDown' ? 40 : key.charCodeAt(0)),
+        bubbles: true,
+        cancelable: true,
+        view: window
       });
+      
       document.dispatchEvent(keyUpEvent);
+      window.dispatchEvent(keyUpEvent);
+      
+      if (unityCanvas) {
+        unityCanvas.dispatchEvent(keyUpEvent);
+      }
+      
+      if (unityContainer) {
+        unityContainer.dispatchEvent(keyUpEvent);
+      }
+      
+      if (document.activeElement) {
+        document.activeElement.dispatchEvent(keyUpEvent);
+      }
+      
+      if (window.handleKeyUp) {
+        window.handleKeyUp(fallbackEvent);
+      }
     }, 100);
+    
+    console.log(`Simulated key press: ${key}`);
+  }
+
+  // Add a direct keyboard event handler to help debug
+  document.addEventListener('keydown', function(event) {
+    console.log('Key pressed:', event.key);
+  });
+
+  // Add this new function
+  function focusGameElement() {
+    // Try to find and focus the game canvas or container
+    const gameCanvas = document.querySelector('canvas');
+    const gameContainer = document.getElementById('unity-container') || 
+                         document.querySelector('[id*="unity"]') ||
+                         document.querySelector('.webgl-content');
+    
+    if (gameCanvas) {
+      console.log('Found game canvas, focusing it');
+      gameCanvas.focus();
+    } else if (gameContainer) {
+      console.log('Found game container, focusing it');
+      gameContainer.focus();
+    }
+    
+    // Also try to click on the canvas to ensure it has focus
+    if (gameCanvas) {
+      const centerX = gameCanvas.width / 2;
+      const centerY = gameCanvas.height / 2;
+      
+      try {
+        // Create and dispatch a mouse click event
+        const clickEvent = new MouseEvent('click', {
+          bubbles: true,
+          cancelable: true,
+          view: window,
+          clientX: centerX,
+          clientY: centerY
+        });
+        
+        gameCanvas.dispatchEvent(clickEvent);
+      } catch (e) {
+        console.log('Error simulating click on canvas:', e);
+      }
+    }
+  }
+
+  // Add this after the document is loaded
+  window.addEventListener('load', function() {
+    // Try to hook into the game's input system
+    hookIntoGameInput();
+  });
+
+  function hookIntoGameInput() {
+    // Wait a bit for the game to initialize
+    setTimeout(() => {
+      console.log('Attempting to hook into game input system...');
+      
+      // Try to find Unity instance
+      if (window.unityInstance) {
+        console.log('Found Unity instance');
+      } else if (window.unityGame) {
+        console.log('Found Unity game');
+      }
+      
+      // Try to find any input-related functions
+      const possibleInputHandlers = [
+        'handleKeyDown',
+        'onKeyDown',
+        'keyDown',
+        'processInput',
+        'handleInput'
+      ];
+      
+      for (const handler of possibleInputHandlers) {
+        if (typeof window[handler] === 'function') {
+          console.log(`Found input handler: ${handler}`);
+        }
+      }
+      
+      // Check for iframe and try to access its content
+      const iframes = document.querySelectorAll('iframe');
+      if (iframes.length > 0) {
+        console.log(`Found ${iframes.length} iframes, trying to access content`);
+        
+        for (const iframe of iframes) {
+          try {
+            const iframeWindow = iframe.contentWindow;
+            if (iframeWindow && iframeWindow.document) {
+              console.log('Successfully accessed iframe content');
+              
+              // Try to find game canvas in iframe
+              const iframeCanvas = iframeWindow.document.querySelector('canvas');
+              if (iframeCanvas) {
+                console.log('Found canvas in iframe');
+                window.gameIframe = iframe;
+                window.gameIframeCanvas = iframeCanvas;
+              }
+            }
+          } catch (e) {
+            console.log('Error accessing iframe content:', e);
+          }
+        }
+      }
+    }, 2000);
   }
 });
 
