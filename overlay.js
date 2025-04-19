@@ -66,6 +66,26 @@ window.addEventListener('load', async function() {
   instructions2.style.marginBottom = '25px';
   instructions2.style.color = '#333';
   
+  // Add a third instruction for the controls explanation
+  const instructions3 = document.createElement('div');
+  instructions3.style.fontSize = '16px';
+  instructions3.style.marginTop = '15px';
+  instructions3.style.color = '#555';
+  instructions3.style.textAlign = 'left';
+  instructions3.style.padding = '10px';
+  instructions3.style.backgroundColor = '#f5f5f5';
+  instructions3.style.borderRadius = '5px';
+  instructions3.style.display = 'none'; // Hide initially, show after calibration
+
+  instructions3.innerHTML = `
+  <strong>Controls:</strong><br>
+  • Move left/right: Lean body left/right<br>
+  • Jump (ArrowUp): Raise both shoulders above jump line<br>
+  • Action (Space): Raise one hand above nose level<br>
+  • Pause: Raise both hands above nose level<br>
+  • Duck: Lower shoulders below duck line
+  `;
+  
   // Improve the progress container styling
   const progressContainer = document.createElement('div');
   progressContainer.style.width = '100%';
@@ -170,7 +190,7 @@ window.addEventListener('load', async function() {
   leftLabel.textContent = 'Right';
   leftLabel.style.position = 'absolute';
   leftLabel.style.top = '5px';
-  leftLabel.style.right = '30px'; // Position on right side (for left action)
+  leftLabel.style.right = '30px';
   leftLabel.style.color = 'white';
   leftLabel.style.fontSize = '12px';
   leftLabel.style.fontWeight = 'bold';
@@ -190,10 +210,10 @@ window.addEventListener('load', async function() {
   centerLabel.style.zIndex = '4';
 
   const rightLabel = document.createElement('div');
-  rightLabel.textContent = 'Left';
+  rightLabel.textContent = 'Right';
   rightLabel.style.position = 'absolute';
   rightLabel.style.top = '5px';
-  rightLabel.style.left = '30px'; // Position on left side (for right action)
+  rightLabel.style.left = '30px';
   rightLabel.style.color = 'white';
   rightLabel.style.fontSize = '12px';
   rightLabel.style.fontWeight = 'bold';
@@ -243,6 +263,7 @@ window.addEventListener('load', async function() {
   // Assemble the UI
   instructionsContainer.appendChild(instructions);
   instructionsContainer.appendChild(instructions2);
+  instructionsContainer.appendChild(instructions3);
   instructionsContainer.appendChild(progressLabel);
   progressContainer.appendChild(progressBar);
   instructionsContainer.appendChild(progressContainer);
@@ -624,18 +645,13 @@ window.addEventListener('load', async function() {
         jumpThreshold = bodyHeight * 0.20;   // 20% of body height
         duckThreshold = bodyHeight * -0.50;  // 50% of body height below
         
-        // Change UI to show game is ready
-        title.textContent = 'Motion Control Active';
+        // Hide the entire instructions container instead of just the elements inside it
         instructionsContainer.style.display = 'none';
-        progressContainer.style.display = 'none';
+        
         toggleButton.textContent = 'Play with computer controls';
         
         // Change overlay background to transparent
         overlay.style.backgroundColor = 'rgba(0, 0, 0, 0)';
-        
-        // Hide calibration UI elements except for the canvas container and button
-        instructionsContainer.style.display = 'none';
-        progressContainer.style.display = 'none';
         
         // Try to focus the game element
         focusGameElement();
@@ -669,24 +685,30 @@ window.addEventListener('load', async function() {
     const rightShoulder = pose[6];
     const leftWrist = pose[9];
     const rightWrist = pose[10];
+    const leftHip = pose[11];
+    const rightHip = pose[12];
     
-    // Only proceed if shoulders are detected with good confidence
-    if (leftShoulder[2] > 0.5 && rightShoulder[2] > 0.5) {
+    // Only proceed if shoulders and nose are detected with good confidence
+    if (leftShoulder[2] > 0.5 && rightShoulder[2] > 0.5 && nose[2] > 0.5) {
       const currentTime = Date.now();
       
       // Calculate midpoint of shoulders for left/right movement
       const shoulderMidpointX = (leftShoulder[1] + rightShoulder[1]) / 2;
+      const avgShoulderY = (leftShoulder[0] + rightShoulder[0]) / 2;
       
       // Define the three sections of the screen
       const leftThreshold = 1/3;
       const rightThreshold = 2/3;
       
       // Determine which zone the player is currently in
+      // NOTE: We're inverting the zones here to fix the control direction
       let newPositionZone;
       if (shoulderMidpointX < leftThreshold) {
-        newPositionZone = 'left';
-      } else if (shoulderMidpointX > rightThreshold) {
+        // When player is in the left third of the screen, they should move right
         newPositionZone = 'right';
+      } else if (shoulderMidpointX > rightThreshold) {
+        // When player is in the right third of the screen, they should move left
+        newPositionZone = 'left';
       } else {
         newPositionZone = 'middle';
       }
@@ -697,13 +719,13 @@ window.addEventListener('load', async function() {
         
         // Handle zone transitions
         if (newPositionZone === 'left') {
-          // Moving from middle or right to left
+          // Moving to left zone
           simulateKeyPress('ArrowLeft');
           statusText.textContent = 'Action: Move Left';
           lastCommand = 'left';
           lastCommandTime = currentTime;
         } else if (newPositionZone === 'right') {
-          // Moving from middle or left to right
+          // Moving to right zone
           simulateKeyPress('ArrowRight');
           statusText.textContent = 'Action: Move Right';
           lastCommand = 'right';
@@ -738,21 +760,41 @@ window.addEventListener('load', async function() {
         }
       }
       
-      // Jump action - hand raised above threshold
-      if ((leftWrist[2] > 0.5 && leftWrist[0] < shoulderBaseline - jumpThreshold) || 
-          (rightWrist[2] > 0.5 && rightWrist[0] < shoulderBaseline - jumpThreshold)) {
+      // NEW CONTROL: Jump action (ArrowUp) - both shoulders above jump threshold
+      if (avgShoulderY < shoulderBaseline - jumpThreshold) {
         if (lastCommand !== 'jump' || currentTime - lastCommandTime > commandCooldown) {
-          simulateKeyPress(' '); // Space key for jump
-          statusText.textContent = 'Action: Jump';
+          simulateKeyPress('ArrowUp');
+          statusText.textContent = 'Action: Jump (ArrowUp)';
           lastCommand = 'jump';
           lastCommandTime = currentTime;
         }
       }
       
-      // Duck action - hands below duck threshold
-      if (leftWrist[2] > 0.5 && rightWrist[2] > 0.5 && 
-          leftWrist[0] > shoulderBaseline - duckThreshold && 
-          rightWrist[0] > shoulderBaseline - duckThreshold) {
+      // NEW CONTROL: Space bar - one hand raised above nose level
+      const leftHandAboveNose = leftWrist[2] > 0.5 && leftWrist[0] < nose[0];
+      const rightHandAboveNose = rightWrist[2] > 0.5 && rightWrist[0] < nose[0];
+      
+      if ((leftHandAboveNose || rightHandAboveNose) && !(leftHandAboveNose && rightHandAboveNose)) {
+        if (lastCommand !== 'space' || currentTime - lastCommandTime > commandCooldown) {
+          simulateKeyPress(' '); // Space key
+          statusText.textContent = 'Action: Space';
+          lastCommand = 'space';
+          lastCommandTime = currentTime;
+        }
+      }
+      
+      // NEW CONTROL: Pause - both hands raised above nose level
+      if (leftHandAboveNose && rightHandAboveNose) {
+        if (lastCommand !== 'pause' || currentTime - lastCommandTime > commandCooldown) {
+          simulateKeyPress('p'); // Assuming 'p' is the pause key
+          statusText.textContent = 'Action: Pause';
+          lastCommand = 'pause';
+          lastCommandTime = currentTime;
+        }
+      }
+      
+      // Duck action - shoulders below duck threshold
+      if (avgShoulderY > shoulderBaseline - duckThreshold) {
         if (lastCommand !== 'duck' || currentTime - lastCommandTime > commandCooldown) {
           simulateKeyPress('ArrowDown');
           statusText.textContent = 'Action: Duck';
@@ -989,6 +1031,100 @@ window.addEventListener('load', async function() {
       }
     }, 2000);
   }
+
+  // Create a controls button to toggle instructions display
+  const controlsButton = document.createElement('button');
+  controlsButton.textContent = 'Controls';
+  controlsButton.style.position = 'fixed';
+  controlsButton.style.bottom = '330px';
+  controlsButton.style.right = '240px'; // Position it to the left of the toggle button
+  controlsButton.style.padding = '10px 15px';
+  controlsButton.style.backgroundColor = '#4CAF50';
+  controlsButton.style.color = 'white';
+  controlsButton.style.border = 'none';
+  controlsButton.style.borderRadius = '5px';
+  controlsButton.style.cursor = 'pointer';
+  controlsButton.style.fontWeight = 'bold';
+  controlsButton.style.zIndex = '100000';
+  controlsButton.style.boxShadow = '0 2px 5px rgba(0,0,0,0.2)';
+
+  // Create a container for the controls instructions that can be toggled
+  const controlsInstructionsContainer = document.createElement('div');
+  controlsInstructionsContainer.style.position = 'fixed';
+  controlsInstructionsContainer.style.top = '50%';
+  controlsInstructionsContainer.style.left = '50%';
+  controlsInstructionsContainer.style.transform = 'translate(-50%, -50%)';
+  controlsInstructionsContainer.style.backgroundColor = 'rgba(255, 255, 255, 0.95)';
+  controlsInstructionsContainer.style.padding = '20px';
+  controlsInstructionsContainer.style.borderRadius = '10px';
+  controlsInstructionsContainer.style.boxShadow = '0 4px 15px rgba(0,0,0,0.3)';
+  controlsInstructionsContainer.style.zIndex = '100001';
+  controlsInstructionsContainer.style.maxWidth = '400px';
+  controlsInstructionsContainer.style.width = '90%';
+  controlsInstructionsContainer.style.display = 'none'; // Hidden by default
+
+  // Add a close button to the controls instructions
+  const closeControlsButton = document.createElement('button');
+  closeControlsButton.textContent = '×';
+  closeControlsButton.style.position = 'absolute';
+  closeControlsButton.style.top = '10px';
+  closeControlsButton.style.right = '10px';
+  closeControlsButton.style.backgroundColor = 'transparent';
+  closeControlsButton.style.border = 'none';
+  closeControlsButton.style.fontSize = '24px';
+  closeControlsButton.style.cursor = 'pointer';
+  closeControlsButton.style.color = '#333';
+  closeControlsButton.style.width = '30px';
+  closeControlsButton.style.height = '30px';
+  closeControlsButton.style.lineHeight = '30px';
+  closeControlsButton.style.textAlign = 'center';
+  closeControlsButton.style.padding = '0';
+
+  // Add a title to the controls instructions
+  const controlsTitle = document.createElement('h2');
+  controlsTitle.textContent = 'Motion Controls';
+  controlsTitle.style.marginTop = '0';
+  controlsTitle.style.marginBottom = '15px';
+  controlsTitle.style.color = '#333';
+  controlsTitle.style.fontSize = '24px';
+  controlsTitle.style.textAlign = 'center';
+
+  // Clone the instructions3 content for the controls popup
+  const controlsContent = document.createElement('div');
+  controlsContent.innerHTML = `
+  <strong>Controls:</strong><br>
+  • Move left/right: Lean body left/right<br>
+  • Jump (ArrowUp): Raise both shoulders above jump line<br>
+  • Action (Space): Raise one hand above nose level<br>
+  • Pause: Raise both hands above nose level<br>
+  • Duck: Lower shoulders below duck line
+  `;
+  controlsContent.style.fontSize = '16px';
+  controlsContent.style.lineHeight = '1.6';
+  controlsContent.style.color = '#333';
+
+  // Assemble the controls instructions container
+  controlsInstructionsContainer.appendChild(closeControlsButton);
+  controlsInstructionsContainer.appendChild(controlsTitle);
+  controlsInstructionsContainer.appendChild(controlsContent);
+
+  // Update the event listener to toggle the controls instructions
+  controlsButton.addEventListener('click', function() {
+    if (controlsInstructionsContainer.style.display === 'none') {
+      controlsInstructionsContainer.style.display = 'block';
+    } else {
+      controlsInstructionsContainer.style.display = 'none';
+    }
+  });
+
+  // Add event listener to close the controls instructions
+  closeControlsButton.addEventListener('click', function() {
+    controlsInstructionsContainer.style.display = 'none';
+  });
+
+  // Add the controls button and instructions container to the document
+  document.body.appendChild(controlsButton);
+  document.body.appendChild(controlsInstructionsContainer);
 });
 
 function loadScript(src) {
