@@ -187,10 +187,10 @@ window.addEventListener('load', async function() {
   
   // Create section labels as HTML elements instead of drawing on canvas
   const leftLabel = document.createElement('div');
-  leftLabel.textContent = 'Right';
+  leftLabel.textContent = 'Left';
   leftLabel.style.position = 'absolute';
   leftLabel.style.top = '5px';
-  leftLabel.style.right = '30px';
+  leftLabel.style.left = '30px';
   leftLabel.style.color = 'white';
   leftLabel.style.fontSize = '12px';
   leftLabel.style.fontWeight = 'bold';
@@ -213,7 +213,7 @@ window.addEventListener('load', async function() {
   rightLabel.textContent = 'Right';
   rightLabel.style.position = 'absolute';
   rightLabel.style.top = '5px';
-  rightLabel.style.left = '30px';
+  rightLabel.style.right = '30px';
   rightLabel.style.color = 'white';
   rightLabel.style.fontSize = '12px';
   rightLabel.style.fontWeight = 'bold';
@@ -313,9 +313,13 @@ window.addEventListener('load', async function() {
   let calibrationShoulders = [];
   let calibrationHips = [];
   let calibrationBodyHeights = [];
+  let calibrationShoulderWidths = []; // Add array for shoulder widths
   let shoulderBaseline = null;
   let hipBaseline = null;
   let bodyHeight = null;
+  let shoulderWidth = null; // Add variable for shoulder width
+  let leftBoundary = null; // Add variable for left boundary
+  let rightBoundary = null; // Add variable for right boundary
   let jumpThreshold = null;
   let duckThreshold = null;
   
@@ -462,26 +466,44 @@ window.addEventListener('load', async function() {
     // Clear the canvas first
     ctx.clearRect(0, 0, canvasElement.width, canvasElement.height);
     
-    // Set background to semi-transparent black like in pose-detection.js
+    // Set background to semi-transparent black
     ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
     ctx.fillRect(0, 0, canvasElement.width, canvasElement.height);
     
-    // Draw vertical lines to divide the view into three sections
-    const sectionWidth = canvasElement.width / 3;
-    
-    // Draw first dividing line (1/3 of the way)
-    ctx.beginPath();
-    ctx.moveTo(sectionWidth, 0);
-    ctx.lineTo(sectionWidth, canvasElement.height);
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
-    ctx.lineWidth = 1;
-    ctx.stroke();
-    
-    // Draw second dividing line (2/3 of the way)
-    ctx.beginPath();
-    ctx.moveTo(sectionWidth * 2, 0);
-    ctx.lineTo(sectionWidth * 2, canvasElement.height);
-    ctx.stroke();
+    // Only draw vertical lines if calibration is complete and boundaries are set
+    if (calibrated && leftBoundary !== null && rightBoundary !== null) {
+      // Draw vertical lines to divide the view into three sections based on shoulder width
+      ctx.beginPath();
+      ctx.moveTo(leftBoundary * canvasElement.width, 0);
+      ctx.lineTo(leftBoundary * canvasElement.width, canvasElement.height);
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.7)'; // More opaque
+      ctx.lineWidth = 1; // Thinner line
+      ctx.stroke();
+      
+      ctx.beginPath();
+      ctx.moveTo(rightBoundary * canvasElement.width, 0);
+      ctx.lineTo(rightBoundary * canvasElement.width, canvasElement.height);
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.7)'; // More opaque
+      ctx.lineWidth = 1; // Thinner line
+      ctx.stroke();
+      
+      // Show the section labels only after calibration
+      leftLabel.style.display = 'block';
+      centerLabel.style.display = 'block';
+      rightLabel.style.display = 'block';
+      
+      // Position the labels on the outsides of the boundary lines
+      // Left label should be to the left of the left boundary
+      leftLabel.style.left = (leftBoundary * canvasElement.width - 40) + 'px';
+      
+      // Right label should be to the right of the right boundary
+      rightLabel.style.left = (rightBoundary * canvasElement.width + 10) + 'px';
+    } else {
+      // Hide the section labels before calibration
+      leftLabel.style.display = 'none';
+      centerLabel.style.display = 'none';
+      rightLabel.style.display = 'none';
+    }
     
     // Draw keypoints with yellow circles like in pose-detection.js
     for (let i = 0; i < keypoints.length; i++) {
@@ -611,10 +633,17 @@ window.addEventListener('load', async function() {
         calibrationShoulders = [];
         calibrationHips = [];
         calibrationBodyHeights = [];
+        calibrationShoulderWidths = []; // Add array for shoulder widths
       }
       
       // Collect calibration data
       calibrationShoulders.push(avgShoulderY);
+      
+      // Calculate and collect shoulder width data
+      if (leftShoulder[2] > 0.5 && rightShoulder[2] > 0.5) {
+        const currentShoulderWidth = Math.abs(leftShoulder[1] - rightShoulder[1]);
+        calibrationShoulderWidths.push(currentShoulderWidth);
+      }
       
       // Get hip positions if available
       if (leftHip[2] > 0.3 && rightHip[2] > 0.3) {
@@ -640,12 +669,24 @@ window.addEventListener('load', async function() {
         shoulderBaseline = average(calibrationShoulders);
         hipBaseline = average(calibrationHips);
         bodyHeight = average(calibrationBodyHeights);
+        shoulderWidth = average(calibrationShoulderWidths);
         
-        // Calculate thresholds - only one jump threshold at 20%
+        // Calculate thresholds
         jumpThreshold = bodyHeight * 0.20;   // 20% of body height
         duckThreshold = bodyHeight * -0.50;  // 50% of body height below
         
-        // Hide the entire instructions container instead of just the elements inside it
+        // Calculate boundary positions based on shoulder width
+        // Use a smaller multiplier to make the boundaries closer to actual shoulder width
+        const centerX = 0.5; // Center of the screen
+        const boundaryOffset = shoulderWidth * 0.75; // Reduced from 1.5 to 0.75
+        leftBoundary = centerX - boundaryOffset;
+        rightBoundary = centerX + boundaryOffset;
+        
+        // Ensure boundaries are within screen limits but allow them to be closer
+        leftBoundary = Math.max(0.2, leftBoundary);
+        rightBoundary = Math.min(0.8, rightBoundary);
+        
+        // Hide the entire instructions container
         instructionsContainer.style.display = 'none';
         
         toggleButton.textContent = 'Play with computer controls';
@@ -659,6 +700,8 @@ window.addEventListener('load', async function() {
         console.log("Calibration complete!");
         console.log("Shoulder baseline:", shoulderBaseline);
         console.log("Body height:", bodyHeight);
+        console.log("Shoulder width:", shoulderWidth);
+        console.log("Boundaries:", leftBoundary, rightBoundary);
         console.log("Jump threshold:", jumpThreshold);
         console.log("Duck threshold:", duckThreshold);
       }
@@ -670,6 +713,7 @@ window.addEventListener('load', async function() {
       calibrationShoulders = [];
       calibrationHips = [];
       calibrationBodyHeights = [];
+      calibrationShoulderWidths = []; // Reset shoulder widths array
     }
   }
   
@@ -696,18 +740,13 @@ window.addEventListener('load', async function() {
       const shoulderMidpointX = (leftShoulder[1] + rightShoulder[1]) / 2;
       const avgShoulderY = (leftShoulder[0] + rightShoulder[0]) / 2;
       
-      // Define the three sections of the screen
-      const leftThreshold = 1/3;
-      const rightThreshold = 2/3;
-      
-      // Determine which zone the player is currently in
-      // NOTE: We're inverting the zones here to fix the control direction
+      // Use the calculated boundaries instead of fixed thirds
       let newPositionZone;
-      if (shoulderMidpointX < leftThreshold) {
-        // When player is in the left third of the screen, they should move right
+      if (shoulderMidpointX < leftBoundary) {
+        // When player is in the left section, they should move right
         newPositionZone = 'right';
-      } else if (shoulderMidpointX > rightThreshold) {
-        // When player is in the right third of the screen, they should move left
+      } else if (shoulderMidpointX > rightBoundary) {
+        // When player is in the right section, they should move left
         newPositionZone = 'left';
       } else {
         newPositionZone = 'middle';
