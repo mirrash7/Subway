@@ -82,7 +82,7 @@ window.addEventListener('load', async function() {
   • Move left/right: Lean body left/right<br>
   • Jump (ArrowUp): Raise both shoulders above jump line<br>
   • Action (Space): Raise one hand above nose level<br>
-  • Pause: Raise both hands above nose level<br>
+  • Pause (Escape): Hold both hands at shoulder level<br>
   • Duck: Lower shoulders below duck line
   `;
   
@@ -260,6 +260,47 @@ window.addEventListener('load', async function() {
   duckLabel.style.display = 'none'; // Hide initially
   duckLabel.style.zIndex = '5';
   
+  // Create a smiley face element
+  const smileyFace = document.createElement('div');
+  smileyFace.textContent = '😊';
+  smileyFace.style.position = 'absolute';
+  smileyFace.style.fontSize = '50px';
+  smileyFace.style.zIndex = '6';
+  smileyFace.style.display = 'none'; // Hide initially
+  smileyFace.style.transform = 'translate(-50%, -50%)'; // Center the emoji on the face
+  smileyFace.style.textShadow = '0 0 5px black'; // Add a shadow for better visibility
+  
+  // Add variables to track the previous position of the face
+  let prevNoseX = null;
+  let prevNoseY = null;
+  let prevEyeDistance = null;
+  let emojiEnabled = true; // Default to showing the emoji
+  
+  // Create a toggle button for the emoji
+  const emojiToggleButton = document.createElement('button');
+  emojiToggleButton.textContent = 'Hide Emoji';
+  emojiToggleButton.style.position = 'fixed';
+  emojiToggleButton.style.bottom = '370px'; // Position above the other buttons
+  emojiToggleButton.style.right = '20px';
+  emojiToggleButton.style.padding = '10px 15px';
+  emojiToggleButton.style.backgroundColor = '#9C27B0'; // Purple color to distinguish it
+  emojiToggleButton.style.color = 'white';
+  emojiToggleButton.style.border = 'none';
+  emojiToggleButton.style.borderRadius = '5px';
+  emojiToggleButton.style.cursor = 'pointer';
+  emojiToggleButton.style.fontWeight = 'bold';
+  emojiToggleButton.style.zIndex = '100000';
+  emojiToggleButton.style.boxShadow = '0 2px 5px rgba(0,0,0,0.2)';
+  
+  // Add event listener to toggle the emoji
+  emojiToggleButton.addEventListener('click', function() {
+    emojiEnabled = !emojiEnabled;
+    emojiToggleButton.textContent = emojiEnabled ? 'Hide Emoji' : 'Show Emoji';
+    if (!emojiEnabled) {
+      smileyFace.style.display = 'none';
+    }
+  });
+  
   // Assemble the UI
   instructionsContainer.appendChild(instructions);
   instructionsContainer.appendChild(instructions2);
@@ -282,6 +323,9 @@ window.addEventListener('load', async function() {
   canvasContainer.appendChild(standingLabel);
   canvasContainer.appendChild(jumpLabel);
   canvasContainer.appendChild(duckLabel);
+  
+  // Add the smiley face to the canvas container
+  canvasContainer.appendChild(smileyFace);
   
   calibrationUI.appendChild(canvasContainer);
   
@@ -309,19 +353,15 @@ window.addEventListener('load', async function() {
   let lastShoulderPosition = 'middle'; // Track the last position of shoulders
   let currentPositionZone = 'middle'; // Track the current position zone
   
-  // Initialize calibration variables
+  // Update the calibration variables
   let calibrationShoulders = [];
   let calibrationHips = [];
   let calibrationBodyHeights = [];
-  let calibrationShoulderWidths = []; // Add array for shoulder widths
-  let shoulderBaseline = null;
-  let hipBaseline = null;
-  let bodyHeight = null;
-  let shoulderWidth = null; // Add variable for shoulder width
-  let leftBoundary = null; // Add variable for left boundary
-  let rightBoundary = null; // Add variable for right boundary
-  let jumpThreshold = null;
-  let duckThreshold = null;
+  let calibrationShoulderWidths = [];
+  let handRaisedFrames = 0; // Count consecutive frames with hand raised
+  let requiredFrames = 15; // Require 15 frames (about 0.5 seconds at 30fps)
+  let lastCalibrationTime = 0; // Track the last time we updated calibration
+  let calibrationDecayRate = 5; // How quickly calibration decays when hand is lowered
   
   // Add debounce variables
   let lastCommandTime = 0;
@@ -463,49 +503,87 @@ window.addEventListener('load', async function() {
   function drawKeypoints(keypoints, ctx) {
     if (!keypoints || keypoints.length === 0) return;
     
-    // Clear the canvas first
+    // Clear and set background once
     ctx.clearRect(0, 0, canvasElement.width, canvasElement.height);
-    
-    // Set background to semi-transparent black
     ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
     ctx.fillRect(0, 0, canvasElement.width, canvasElement.height);
     
-    // Only draw vertical lines if calibration is complete and boundaries are set
-    if (calibrated && leftBoundary !== null && rightBoundary !== null) {
-      // Draw vertical lines to divide the view into three sections based on shoulder width
-      ctx.beginPath();
-      ctx.moveTo(leftBoundary * canvasElement.width, 0);
-      ctx.lineTo(leftBoundary * canvasElement.width, canvasElement.height);
-      ctx.strokeStyle = 'rgba(255, 255, 255, 0.7)'; // More opaque
-      ctx.lineWidth = 1; // Thinner line
-      ctx.stroke();
+    // Get the nose and eye keypoints
+    const nose = keypoints[0];
+    const leftEye = keypoints[1];
+    const rightEye = keypoints[2];
+    
+    // Only show and position the smiley face if emoji is enabled
+    if (emojiEnabled) {
+      // Check if nose is detected with good confidence
+      let noseX, noseY, eyeDistance, fontSize;
       
-      ctx.beginPath();
-      ctx.moveTo(rightBoundary * canvasElement.width, 0);
-      ctx.lineTo(rightBoundary * canvasElement.width, canvasElement.height);
-      ctx.strokeStyle = 'rgba(255, 255, 255, 0.7)'; // More opaque
-      ctx.lineWidth = 1; // Thinner line
-      ctx.stroke();
+      if (nose && nose[2] > 0.5) {
+        // Calculate current position
+        noseX = (1 - nose[1]) * canvasElement.width;
+        noseY = nose[0] * canvasElement.height;
+        
+        // Update previous position
+        prevNoseX = noseX;
+        prevNoseY = noseY;
+        
+        // Calculate eye distance if both eyes are detected
+        if (leftEye && rightEye && leftEye[2] > 0.5 && rightEye[2] > 0.5) {
+          const leftEyeX = (1 - leftEye[1]) * canvasElement.width;
+          const rightEyeX = (1 - rightEye[1]) * canvasElement.width;
+          eyeDistance = Math.abs(leftEyeX - rightEyeX);
+          prevEyeDistance = eyeDistance;
+        } else if (prevEyeDistance) {
+          // Use previous eye distance if current not available
+          eyeDistance = prevEyeDistance;
+        } else {
+          // Default if no previous data
+          eyeDistance = 50;
+        }
+      } else if (prevNoseX !== null && prevNoseY !== null) {
+        // Use previous position if current not available
+        noseX = prevNoseX;
+        noseY = prevNoseY;
+        eyeDistance = prevEyeDistance || 50;
+      } else {
+        // Hide if no current or previous data
+        smileyFace.style.display = 'none';
+        return;
+      }
       
-      // Show the section labels only after calibration
-      leftLabel.style.display = 'block';
-      centerLabel.style.display = 'block';
-      rightLabel.style.display = 'block';
+      // Apply smoothing to reduce jitter
+      if (prevNoseX !== null && prevNoseY !== null) {
+        // Smooth the position (80% previous, 20% current)
+        noseX = prevNoseX * 0.8 + noseX * 0.2;
+        noseY = prevNoseY * 0.8 + noseY * 0.2;
+        
+        // Update the previous position with the smoothed values
+        prevNoseX = noseX;
+        prevNoseY = noseY;
+      }
       
-      // Position the labels on the outsides of the boundary lines
-      // Left label should be to the left of the left boundary
-      leftLabel.style.left = (leftBoundary * canvasElement.width - 40) + 'px';
+      // Set the font size based on eye distance
+      fontSize = Math.max(30, eyeDistance * 2);
+      if (prevEyeDistance !== null) {
+        // Smooth the size change
+        fontSize = prevEyeDistance * 0.8 + fontSize * 0.2;
+        prevEyeDistance = fontSize / 2;
+      }
       
-      // Right label should be to the right of the right boundary
-      rightLabel.style.left = (rightBoundary * canvasElement.width + 10) + 'px';
+      // Update the emoji position and size
+      smileyFace.style.display = 'block';
+      smileyFace.style.left = `${noseX}px`;
+      smileyFace.style.top = `${noseY}px`;
+      smileyFace.style.fontSize = `${fontSize}px`;
     } else {
-      // Hide the section labels before calibration
-      leftLabel.style.display = 'none';
-      centerLabel.style.display = 'none';
-      rightLabel.style.display = 'none';
+      // Hide the emoji if disabled
+      smileyFace.style.display = 'none';
     }
     
-    // Draw keypoints with yellow circles like in pose-detection.js
+    // Handle boundary lines and labels
+    handleBoundaryLines(ctx);
+    
+    // Draw keypoints
     for (let i = 0; i < keypoints.length; i++) {
       const keypoint = keypoints[i];
       if (!keypoint || keypoint.length < 3) continue;
@@ -604,6 +682,39 @@ window.addEventListener('load', async function() {
     }
   }
   
+  function handleBoundaryLines(ctx) {
+    if (calibrated && leftBoundary !== null && rightBoundary !== null) {
+      // Draw vertical lines
+      const linePositions = [
+        leftBoundary * canvasElement.width,
+        rightBoundary * canvasElement.width
+      ];
+      
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.7)';
+      ctx.lineWidth = 1;
+      
+      linePositions.forEach(x => {
+        ctx.beginPath();
+        ctx.moveTo(x, 0);
+        ctx.lineTo(x, canvasElement.height);
+        ctx.stroke();
+      });
+      
+      // Show and position labels
+      [leftLabel, centerLabel, rightLabel].forEach(label => {
+        label.style.display = 'block';
+      });
+      
+      leftLabel.style.left = (leftBoundary * canvasElement.width - 40) + 'px';
+      rightLabel.style.left = (rightBoundary * canvasElement.width + 10) + 'px';
+    } else {
+      // Hide labels
+      [leftLabel, centerLabel, rightLabel].forEach(label => {
+        label.style.display = 'none';
+      });
+    }
+  }
+  
   function checkCalibrationMoveNet(pose) {
     // Get keypoints
     const nose = pose[0];
@@ -624,19 +735,18 @@ window.addEventListener('load', async function() {
     const handRaised = (leftWrist[2] > 0.5 && leftWrist[0] < avgShoulderY) || 
                        (rightWrist[2] > 0.5 && rightWrist[0] < avgShoulderY);
     
+    const currentTime = Date.now();
+    
     if (handRaised) {
+      // Count consecutive frames with hand raised
+      handRaisedFrames++;
+      
       // If this is the first frame with hand raised, start the timer
       if (calibrationStartTime === 0) {
-        calibrationStartTime = Date.now();
-        
-        // Initialize calibration data arrays
-        calibrationShoulders = [];
-        calibrationHips = [];
-        calibrationBodyHeights = [];
-        calibrationShoulderWidths = []; // Add array for shoulder widths
+        calibrationStartTime = currentTime;
       }
       
-      // Collect calibration data
+      // Collect calibration data on every frame
       calibrationShoulders.push(avgShoulderY);
       
       // Calculate and collect shoulder width data
@@ -655,66 +765,85 @@ window.addEventListener('load', async function() {
         calibrationBodyHeights.push(currentBodyHeight);
       }
       
-      // Calculate elapsed time and update progress
-      const elapsedTime = Date.now() - calibrationStartTime;
-      calibrationProgress = Math.min(100, (elapsedTime / 3000) * 100);
+      // Update progress based on frames rather than time
+      // This makes calibration faster and more responsive
+      calibrationProgress = Math.min(100, (handRaisedFrames / requiredFrames) * 100);
       progressBar.style.width = `${calibrationProgress}%`;
+      lastCalibrationTime = currentTime;
       
       // Check if calibration is complete
-      if (calibrationProgress >= 100) {
-        calibrated = true;
-        statusText.textContent = 'Calibration complete! You can now control the game with your movements.';
-        
-        // Calculate baselines from collected data
-        shoulderBaseline = average(calibrationShoulders);
-        hipBaseline = average(calibrationHips);
-        bodyHeight = average(calibrationBodyHeights);
-        shoulderWidth = average(calibrationShoulderWidths);
-        
-        // Calculate thresholds
-        jumpThreshold = bodyHeight * 0.20;   // 20% of body height
-        duckThreshold = bodyHeight * -0.50;  // 50% of body height below
-        
-        // Calculate boundary positions based on shoulder width
-        // Use a smaller multiplier to make the boundaries closer to actual shoulder width
-        const centerX = 0.5; // Center of the screen
-        const boundaryOffset = shoulderWidth * 0.75; // Reduced from 1.5 to 0.75
-        leftBoundary = centerX - boundaryOffset;
-        rightBoundary = centerX + boundaryOffset;
-        
-        // Ensure boundaries are within screen limits but allow them to be closer
-        leftBoundary = Math.max(0.2, leftBoundary);
-        rightBoundary = Math.min(0.8, rightBoundary);
-        
-        // Hide the entire instructions container
-        instructionsContainer.style.display = 'none';
-        
-        toggleButton.textContent = 'Play with computer controls';
-        
-        // Change overlay background to transparent
-        overlay.style.backgroundColor = 'rgba(0, 0, 0, 0)';
-        
-        // Try to focus the game element
-        focusGameElement();
-        
-        console.log("Calibration complete!");
-        console.log("Shoulder baseline:", shoulderBaseline);
-        console.log("Body height:", bodyHeight);
-        console.log("Shoulder width:", shoulderWidth);
-        console.log("Boundaries:", leftBoundary, rightBoundary);
-        console.log("Jump threshold:", jumpThreshold);
-        console.log("Duck threshold:", duckThreshold);
+      if (handRaisedFrames >= requiredFrames) {
+        completeCalibration();
       }
     } else {
-      // Reset if hand is lowered
-      calibrationStartTime = 0;
-      calibrationProgress = 0;
-      progressBar.style.width = '0%';
-      calibrationShoulders = [];
-      calibrationHips = [];
-      calibrationBodyHeights = [];
-      calibrationShoulderWidths = []; // Reset shoulder widths array
+      // Reset frame counter if hand is lowered
+      handRaisedFrames = 0;
+      
+      // Gradually decrease calibration progress if hand is lowered
+      // but don't reset it completely right away
+      if (calibrationProgress > 0 && currentTime - lastCalibrationTime > 100) {
+        calibrationProgress = Math.max(0, calibrationProgress - calibrationDecayRate);
+        progressBar.style.width = `${calibrationProgress}%`;
+        lastCalibrationTime = currentTime;
+        
+        // Only reset completely if progress drops to 0
+        if (calibrationProgress === 0) {
+          resetCalibration();
+        }
+      }
     }
+  }
+  
+  function completeCalibration() {
+    calibrated = true;
+    statusText.textContent = 'Calibration complete! You can now control the game with your movements.';
+    
+    // Calculate baselines from collected data
+    shoulderBaseline = average(calibrationShoulders);
+    hipBaseline = average(calibrationHips);
+    bodyHeight = average(calibrationBodyHeights);
+    shoulderWidth = average(calibrationShoulderWidths);
+    
+    // Calculate thresholds
+    jumpThreshold = bodyHeight * 0.20;   // 20% of body height
+    duckThreshold = bodyHeight * -0.50;  // 50% of body height below
+    
+    // Calculate boundary positions based on shoulder width
+    const centerX = 0.5; // Center of the screen
+    const boundaryOffset = shoulderWidth * 0.75;
+    leftBoundary = centerX - boundaryOffset;
+    rightBoundary = centerX + boundaryOffset;
+    
+    // Ensure boundaries are within screen limits
+    leftBoundary = Math.max(0.2, leftBoundary);
+    rightBoundary = Math.min(0.8, rightBoundary);
+    
+    // Hide the entire instructions container
+    instructionsContainer.style.display = 'none';
+    
+    toggleButton.textContent = 'Play with computer controls';
+    
+    // Change overlay background to transparent
+    overlay.style.backgroundColor = 'rgba(0, 0, 0, 0)';
+    
+    // Try to focus the game element
+    focusGameElement();
+    
+    console.log("Calibration complete!");
+    console.log("Shoulder baseline:", shoulderBaseline);
+    console.log("Body height:", bodyHeight);
+    console.log("Shoulder width:", shoulderWidth);
+    console.log("Boundaries:", leftBoundary, rightBoundary);
+    console.log("Jump threshold:", jumpThreshold);
+    console.log("Duck threshold:", duckThreshold);
+  }
+  
+  function resetCalibration() {
+    calibrationStartTime = 0;
+    calibrationShoulders = [];
+    calibrationHips = [];
+    calibrationBodyHeights = [];
+    calibrationShoulderWidths = [];
   }
   
   function average(arr) {
@@ -822,13 +951,26 @@ window.addEventListener('load', async function() {
         }
       }
       
-      // NEW CONTROL: Pause - both hands raised above nose level
-      if (leftHandAboveNose && rightHandAboveNose) {
-        if (lastCommand !== 'pause' || currentTime - lastCommandTime > commandCooldown) {
-          simulateKeyPress('p'); // Assuming 'p' is the pause key
-          statusText.textContent = 'Action: Pause';
-          lastCommand = 'pause';
-          lastCommandTime = currentTime;
+      // UPDATED PAUSE CONTROL: Both wrists at shoulder height (standing line)
+      // Check if both wrists are detected with good confidence
+      if (leftWrist[2] > 0.5 && rightWrist[2] > 0.5) {
+        // Calculate the standing line position (shoulder baseline)
+        const standingLineY = shoulderBaseline;
+        
+        // Check if both wrists are approximately at the standing line height
+        // Allow for a small margin of error (±10% of body height)
+        const margin = bodyHeight * 0.1;
+        const leftWristAtStandingLine = Math.abs(leftWrist[0] - standingLineY) < margin;
+        const rightWristAtStandingLine = Math.abs(rightWrist[0] - standingLineY) < margin;
+        
+        // If both wrists are at the standing line, trigger pause
+        if (leftWristAtStandingLine && rightWristAtStandingLine) {
+          if (lastCommand !== 'pause' || currentTime - lastCommandTime > commandCooldown) {
+            simulateKeyPress('Escape'); // Use Escape key instead of 'p'
+            statusText.textContent = 'Action: Pause (Escape)';
+            lastCommand = 'pause';
+            lastCommandTime = currentTime;
+          }
         }
       }
       
@@ -845,127 +987,121 @@ window.addEventListener('load', async function() {
   }
   
   function simulateKeyPress(key) {
-    // Try multiple approaches to ensure the key press is recognized
+    console.log(`Simulating key press: ${key}`);
     
-    // 1. Try to find the Unity canvas/container
-    const unityCanvas = document.querySelector('canvas');
-    const unityContainer = document.getElementById('unity-container') || 
-                           document.querySelector('[id*="unity"]') ||
-                           document.querySelector('.webgl-content');
+    const keyCode = getKeyCode(key);
+    const code = key === ' ' ? 'Space' : (key.startsWith('Arrow') ? key : `Key${key.toUpperCase()}`);
     
-    // 2. Create standard keyboard events
+    // Create the event once and reuse it
     const keyDownEvent = new KeyboardEvent('keydown', {
       key: key,
-      code: key === ' ' ? 'Space' : (key.startsWith('Arrow') ? key : `Key${key.toUpperCase()}`),
-      keyCode: key === ' ' ? 32 : (key === 'ArrowLeft' ? 37 : key === 'ArrowUp' ? 38 : key === 'ArrowRight' ? 39 : key === 'ArrowDown' ? 40 : key.charCodeAt(0)),
-      which: key === ' ' ? 32 : (key === 'ArrowLeft' ? 37 : key === 'ArrowUp' ? 38 : key === 'ArrowRight' ? 39 : key === 'ArrowDown' ? 40 : key.charCodeAt(0)),
+      code: code,
+      keyCode: keyCode,
+      which: keyCode,
       bubbles: true,
       cancelable: true,
       view: window
     });
     
-    // 3. Try to access the Unity instance directly
+    // Find all possible targets once
+    const targets = [document, window];
+    const unityCanvas = document.querySelector('canvas');
+    const unityContainer = document.getElementById('unity-container') || 
+                           document.querySelector('[id*="unity"]') ||
+                           document.querySelector('.webgl-content');
+    
+    if (unityCanvas) {
+      targets.push(unityCanvas);
+      unityCanvas.focus();
+    }
+    
+    if (unityContainer) {
+      targets.push(unityContainer);
+    }
+    
+    if (document.activeElement) {
+      targets.push(document.activeElement);
+    }
+    
+    // Try Unity-specific methods
+    tryUnityMethods(key);
+    
+    // Dispatch to all targets
+    targets.forEach(target => target.dispatchEvent(keyDownEvent));
+    
+    // Release key after a short delay
+    setTimeout(() => {
+      const keyUpEvent = new KeyboardEvent('keyup', {
+        key: key,
+        code: code,
+        keyCode: keyCode,
+        which: keyCode,
+        bubbles: true,
+        cancelable: true,
+        view: window
+      });
+      
+      targets.forEach(target => target.dispatchEvent(keyUpEvent));
+      
+      // Try fallback handlers
+      if (window.handleKeyUp) {
+        window.handleKeyUp({ keyCode: keyCode, preventDefault: function() {} });
+      }
+    }, 100);
+  }
+  
+  function tryUnityMethods(key) {
+    // Try Unity instance
     if (window.unityInstance) {
-      console.log('Found Unity instance, sending input directly');
       try {
-        // Try to send input directly to Unity
-        if (key === ' ') {
-          window.unityInstance.SendMessage('GameController', 'Jump');
-        } else if (key === 'ArrowLeft') {
-          window.unityInstance.SendMessage('GameController', 'MoveLeft');
-        } else if (key === 'ArrowRight') {
-          window.unityInstance.SendMessage('GameController', 'MoveRight');
-        } else if (key === 'ArrowDown') {
-          window.unityInstance.SendMessage('GameController', 'Duck');
+        const actionMap = {
+          ' ': 'Jump',
+          'ArrowLeft': 'MoveLeft',
+          'ArrowRight': 'MoveRight',
+          'ArrowDown': 'Duck',
+          'ArrowUp': 'Jump',
+          'Escape': 'Pause'
+        };
+        
+        if (actionMap[key]) {
+          window.unityInstance.SendMessage('GameController', actionMap[key]);
         }
       } catch (e) {
         console.log('Error sending direct message to Unity:', e);
       }
     }
     
-    // 4. Try to use the Poki bridge if available
-    if (window.PokiSDK) {
-      console.log('Found PokiSDK, trying to use it for input');
+    // Try Poki bridge
+    if (window.PokiSDK && window.pokiBridge && window.unityGame) {
       try {
-        if (window.pokiBridge) {
-          if (key === ' ') {
-            window.unityGame.SendMessage(window.pokiBridge, 'Jump');
-          } else if (key === 'ArrowLeft') {
-            window.unityGame.SendMessage(window.pokiBridge, 'MoveLeft');
-          } else if (key === 'ArrowRight') {
-            window.unityGame.SendMessage(window.pokiBridge, 'MoveRight');
-          } else if (key === 'ArrowDown') {
-            window.unityGame.SendMessage(window.pokiBridge, 'Duck');
-          }
+        const actionMap = {
+          ' ': 'Jump',
+          'ArrowLeft': 'MoveLeft',
+          'ArrowRight': 'MoveRight',
+          'ArrowDown': 'Duck',
+          'ArrowUp': 'Jump',
+          'Escape': 'Pause'
+        };
+        
+        if (actionMap[key]) {
+          window.unityGame.SendMessage(window.pokiBridge, actionMap[key]);
         }
       } catch (e) {
         console.log('Error using Poki bridge:', e);
       }
     }
-    
-    // 5. Dispatch events to all possible targets
-    document.dispatchEvent(keyDownEvent);
-    window.dispatchEvent(keyDownEvent);
-    
-    if (unityCanvas) {
-      unityCanvas.dispatchEvent(keyDownEvent);
-      // Also try to focus the canvas first
-      unityCanvas.focus();
-    }
-    
-    if (unityContainer) {
-      unityContainer.dispatchEvent(keyDownEvent);
-    }
-    
-    // 6. Try to use document.activeElement
-    if (document.activeElement) {
-      document.activeElement.dispatchEvent(keyDownEvent);
-    }
-    
-    // 7. Create and dispatch a more basic event as fallback
-    const fallbackEvent = {
-      keyCode: key === ' ' ? 32 : (key === 'ArrowLeft' ? 37 : key === 'ArrowUp' ? 38 : key === 'ArrowRight' ? 39 : key === 'ArrowDown' ? 40 : key.charCodeAt(0)),
-      preventDefault: function() {}
+  }
+  
+  function getKeyCode(key) {
+    const keyCodeMap = {
+      ' ': 32,
+      'ArrowLeft': 37,
+      'ArrowUp': 38,
+      'ArrowRight': 39,
+      'ArrowDown': 40,
+      'Escape': 27  // Add Escape key code
     };
-    
-    // Try to find any game-related event handlers
-    if (window.handleKeyDown) {
-      window.handleKeyDown(fallbackEvent);
-    }
-    
-    // Release key after a short delay
-    setTimeout(() => {
-      const keyUpEvent = new KeyboardEvent('keyup', {
-        key: key,
-        code: key === ' ' ? 'Space' : (key.startsWith('Arrow') ? key : `Key${key.toUpperCase()}`),
-        keyCode: key === ' ' ? 32 : (key === 'ArrowLeft' ? 37 : key === 'ArrowUp' ? 38 : key === 'ArrowRight' ? 39 : key === 'ArrowDown' ? 40 : key.charCodeAt(0)),
-        which: key === ' ' ? 32 : (key === 'ArrowLeft' ? 37 : key === 'ArrowUp' ? 38 : key === 'ArrowRight' ? 39 : key === 'ArrowDown' ? 40 : key.charCodeAt(0)),
-        bubbles: true,
-        cancelable: true,
-        view: window
-      });
-      
-      document.dispatchEvent(keyUpEvent);
-      window.dispatchEvent(keyUpEvent);
-      
-      if (unityCanvas) {
-        unityCanvas.dispatchEvent(keyUpEvent);
-      }
-      
-      if (unityContainer) {
-        unityContainer.dispatchEvent(keyUpEvent);
-      }
-      
-      if (document.activeElement) {
-        document.activeElement.dispatchEvent(keyUpEvent);
-      }
-      
-      if (window.handleKeyUp) {
-        window.handleKeyUp(fallbackEvent);
-      }
-    }, 100);
-    
-    console.log(`Simulated key press: ${key}`);
+    return keyCodeMap[key] || key.charCodeAt(0);
   }
 
   // Add a direct keyboard event handler to help debug
@@ -1135,7 +1271,7 @@ window.addEventListener('load', async function() {
   • Move left/right: Lean body left/right<br>
   • Jump (ArrowUp): Raise both shoulders above jump line<br>
   • Action (Space): Raise one hand above nose level<br>
-  • Pause: Raise both hands above nose level<br>
+  • Pause (Escape): Hold both hands at shoulder level<br>
   • Duck: Lower shoulders below duck line
   `;
   controlsContent.style.fontSize = '16px';
@@ -1164,6 +1300,9 @@ window.addEventListener('load', async function() {
   // Add the controls button and instructions container to the document
   document.body.appendChild(controlsButton);
   document.body.appendChild(controlsInstructionsContainer);
+
+  // Add the emoji toggle button to the document
+  document.body.appendChild(emojiToggleButton);
 });
 
 function loadScript(src) {
