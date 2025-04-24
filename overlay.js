@@ -82,7 +82,7 @@ window.addEventListener('load', async function() {
   • Move left/right: Lean body left/right<br>
   • Jump (ArrowUp): Raise both shoulders above jump line<br>
   • Action (Space): Raise one hand above nose level<br>
-  • Pause (Escape): Hold both hands at shoulder level<br>
+  • Pause (Escape): Extend both arms outward at shoulder level<br>
   • Duck: Lower shoulders below duck line
   `;
   
@@ -367,6 +367,10 @@ window.addEventListener('load', async function() {
   let lastCommandTime = 0;
   let lastCommand = null;
   const commandCooldown = 300; // milliseconds between commands
+  
+  // Add a specific cooldown for the pause command
+  let pauseCooldown = 1500; // 1.5 seconds cooldown for pause command
+  let lastPauseTime = 0; // Track the last time pause was triggered
   
   // Toggle overlay when button is clicked
   toggleButton.addEventListener('click', function() {
@@ -951,9 +955,9 @@ window.addEventListener('load', async function() {
         }
       }
       
-      // UPDATED PAUSE CONTROL: Both wrists at shoulder height (standing line)
+      // UPDATED PAUSE CONTROL: Both wrists at shoulder height AND extended outward
       // Check if both wrists are detected with good confidence
-      if (leftWrist[2] > 0.5 && rightWrist[2] > 0.5) {
+      if (leftWrist[2] > 0.5 && rightWrist[2] > 0.5 && leftShoulder[2] > 0.5 && rightShoulder[2] > 0.5) {
         // Calculate the standing line position (shoulder baseline)
         const standingLineY = shoulderBaseline;
         
@@ -963,13 +967,25 @@ window.addEventListener('load', async function() {
         const leftWristAtStandingLine = Math.abs(leftWrist[0] - standingLineY) < margin;
         const rightWristAtStandingLine = Math.abs(rightWrist[0] - standingLineY) < margin;
         
-        // If both wrists are at the standing line, trigger pause
-        if (leftWristAtStandingLine && rightWristAtStandingLine) {
-          if (lastCommand !== 'pause' || currentTime - lastCommandTime > commandCooldown) {
+        // Calculate horizontal distance from shoulders to wrists
+        // For the x-coordinate, we need to check the distance between wrist and shoulder
+        const leftWristToShoulderX = Math.abs(leftWrist[1] - leftShoulder[1]);
+        const rightWristToShoulderX = Math.abs(rightWrist[1] - rightShoulder[1]);
+        
+        // Require wrists to be extended outward from shoulders by at least 50% of shoulder width
+        const minExtension = shoulderWidth;
+        const leftWristExtended = leftWristToShoulderX > minExtension;
+        const rightWristExtended = rightWristToShoulderX > minExtension;
+        
+        // Update the pause control logic
+        if (leftWristAtStandingLine && rightWristAtStandingLine && leftWristExtended && rightWristExtended) {
+          // Check if enough time has passed since the last pause command
+          if (lastCommand !== 'pause' || (currentTime - lastPauseTime > pauseCooldown)) {
             simulateKeyPress('Escape'); // Use Escape key instead of 'p'
             statusText.textContent = 'Action: Pause (Escape)';
             lastCommand = 'pause';
             lastCommandTime = currentTime;
+            lastPauseTime = currentTime; // Update the last pause time
           }
         }
       }
@@ -1271,7 +1287,7 @@ window.addEventListener('load', async function() {
   • Move left/right: Lean body left/right<br>
   • Jump (ArrowUp): Raise both shoulders above jump line<br>
   • Action (Space): Raise one hand above nose level<br>
-  • Pause (Escape): Hold both hands at shoulder level<br>
+  • Pause (Escape): Extend both arms outward at shoulder level<br>
   • Duck: Lower shoulders below duck line
   `;
   controlsContent.style.fontSize = '16px';
