@@ -264,7 +264,7 @@ window.addEventListener('load', async function() {
   const smileyFace = document.createElement('div');
   smileyFace.textContent = '😊';
   smileyFace.style.position = 'absolute';
-  smileyFace.style.fontSize = '50px';
+  smileyFace.style.fontSize = '75px';
   smileyFace.style.zIndex = '6';
   smileyFace.style.display = 'none'; // Hide initially
   smileyFace.style.transform = 'translate(-50%, -50%)'; // Center the emoji on the face
@@ -563,11 +563,11 @@ window.addEventListener('load', async function() {
       }
       
       // Set the font size based on eye distance
-      fontSize = Math.max(30, eyeDistance * 2);
+      fontSize = Math.max(150, eyeDistance * 5);
       if (prevEyeDistance !== null) {
         // Smooth the size change
         fontSize = prevEyeDistance * 0.8 + fontSize * 0.2;
-        prevEyeDistance = fontSize / 2;
+        prevEyeDistance = fontSize / 5;
       }
       
       // Update the emoji position and size
